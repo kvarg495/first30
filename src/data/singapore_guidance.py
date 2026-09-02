@@ -17,7 +17,11 @@ SCAM_RESPONSE_GUIDE = {
         "title": "Email account at risk",
         "severity": "high",
         "rationale": "Email access can be used to reset other accounts and hide security alerts.",
-        "actions": ["prepare_email_security", "create_evidence_summary"],
+        "actions": [
+            "prepare_email_security",
+            "create_evidence_summary",
+            "draft_contact_notification",
+        ],
     },
     "singpass_details": {
         "title": "Singpass identity access at risk",
@@ -29,7 +33,7 @@ SCAM_RESPONSE_GUIDE = {
         "title": "Personal information exposed",
         "severity": "medium",
         "rationale": "Exposed identity information can enable impersonation and follow-on scams.",
-        "actions": ["create_evidence_summary", "prepare_police_report"],
+        "actions": ["create_evidence_summary", "prepare_police_report", "draft_contact_notification"],
     },
     "unsure": {
         "title": "Exposure is not yet fully known",
@@ -38,6 +42,22 @@ SCAM_RESPONSE_GUIDE = {
         "actions": ["create_evidence_summary", "prepare_police_report"],
     },
 }
+
+# These links are presented to the user for an explicit hand-off. The prototype does
+# not sign in, submit forms, call hotlines, or transmit any incident information.
+OFFICIAL_HANDOFFS = {
+    "scamshield_victim_guidance": "https://www.scamshield.gov.sg/i-have-been-scammed/",
+    "police_report": "https://www.police.gov.sg/e-services/lodge-police-report/",
+    "singpass_contact": "https://portal.singpass.gov.sg/home/ui/contact-us",
+}
+
+EVIDENCE_CHECKLIST = (
+    "Screenshots of messages or webpages",
+    "Scammer phone numbers, usernames, email addresses, and account identifiers",
+    "Suspicious URLs, app names, or social-media profile links",
+    "Transaction dates, amounts, recipient details, and reference numbers",
+    "A timeline of what happened and actions already taken",
+)
 
 KEYWORD_EXPOSURES = {
     "card_details": ("card", "credit card", "debit card", "bank details", "bank account"),
@@ -78,5 +98,10 @@ ACTION_CATALOG = {
         "priority": 5,
         "requires_confirmation": False,
     },
+    "draft_contact_notification": {
+        "title": "Draft a trusted-contact notification",
+        "description": "Prepare a message you can review before warning affected contacts.",
+        "priority": 4,
+        "requires_confirmation": False,
+    },
 }
-
