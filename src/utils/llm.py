@@ -15,7 +15,7 @@ def get_chat_model():
         from langchain_groq import ChatGroq
 
         return ChatGroq(
-            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+            model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
             temperature=0,
         )
 
@@ -23,8 +23,8 @@ def get_chat_model():
         from langchain_aws import ChatBedrock
 
         return ChatBedrock(
-            model_id=os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0"),
-            region_name=os.getenv("AWS_REGION", "ap-southeast-1"),
+            model_id=os.getenv("BEDROCK_MODEL_ID", "amazon.nova-micro-v1:0"),
+            region_name=os.getenv("AWS_REGION", "us-east-1"),
             model_kwargs={"temperature": 0},
         )
 

@@ -65,7 +65,7 @@ first30/
 
 1. Create and activate a virtual environment: `python3.13 -m venv .venv && source .venv/bin/activate`.
 2. Install dependencies with `python -m pip install -r requirements.txt`.
-3. Copy `.env.example` to `.env`. Add a Groq key to enable optional LLM classification and planning.
+3. Copy `.env.example` to `.env`. Add the three temporary AWS credentials from the hackathon access portal, or a Groq key, to enable optional LLM classification and planning.
 4. Run `streamlit run app.py`.
 5. Run tests with `python -m pytest -q`.
 
@@ -108,8 +108,8 @@ The graph should identify critical financial exposure, require approval before p
 - Backend: Python
 - Orchestration: LangGraph
 - State and schemas: Pydantic
-- Development LLM: Groq
-- Optional hackathon LLM: AWS Bedrock / Claude Haiku
+- Hackathon LLM: AWS Bedrock / Amazon Nova Micro
+- Optional fallback LLM: Groq / GPT-OSS 120B
 - Tools: mocked Python functions
 - Knowledge: curated Singapore scam-response guidance
 - Secrets: local `.env`, excluded from Git
