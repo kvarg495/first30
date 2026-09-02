@@ -1,30 +1,49 @@
 from __future__ import annotations
 
+from typing import Any
+
 from langgraph.graph import END, START, StateGraph
 
-from src.agents.assessor import assess_incident
-from src.agents.planner import create_plan
-from src.agents.reviewer import next_pending_action, plan_is_complete
+from src.agents.assessor import assess_incident_with_model
+from src.agents.planner import create_plan_with_model
+from src.agents.reviewer import next_pending_action, review_incident
 from src.state import IncidentState
 from src.tools.registry import TOOL_REGISTRY
+from src.utils.llm import get_optional_chat_model
 
 
-def assess_node(state: IncidentState) -> dict:
-    exposures, risks = assess_incident(state.description, state.selected_exposures)
+def assess_node(state: IncidentState, model: Any | None = None) -> dict:
+    narrative = "\n".join([state.description, *state.incident_updates])
+    exposures, risks, source, rationale = assess_incident_with_model(
+        narrative,
+        state.selected_exposures,
+        model,
+    )
     return {
         "compromised_assets": exposures,
         "risks": risks,
+        "assessment_source": source,
         "status": "planning",
-        "activity_log": [*state.activity_log, f"Assessed {len(risks)} risk area(s)"],
+        "activity_log": [
+            *state.activity_log,
+            f"Assessed {len(risks)} risk area(s) using {source.replace('_', ' ')}",
+            rationale,
+        ],
     }
 
 
-def plan_node(state: IncidentState) -> dict:
-    actions = create_plan(state.risks, state.completed_action_ids)
+def plan_node(state: IncidentState, model: Any | None = None) -> dict:
+    actions, rationale = create_plan_with_model(state.risks, state.completed_action_ids, model)
+    remaining = sum(action.status == "pending" for action in actions)
     return {
         "actions": actions,
+        "plan_version": state.plan_version + 1,
         "status": "acting",
-        "activity_log": [*state.activity_log, f"Prioritised {len(actions)} recovery action(s)"],
+        "activity_log": [
+            *state.activity_log,
+            f"Plan v{state.plan_version + 1}: prioritised {remaining} remaining recovery action(s)",
+            rationale,
+        ],
     }
 
 
@@ -69,14 +88,14 @@ def execute_tool_node(state: IncidentState) -> dict:
     return {
         "actions": updated_actions,
         "completed_action_ids": completed,
+        "tool_results": [*state.tool_results, result],
         "loop_count": state.loop_count + 1,
         "activity_log": [*state.activity_log, result.message],
     }
 
 
 def review_node(state: IncidentState) -> dict:
-    status = "completed" if plan_is_complete(state) else "acting"
-    message = "Response plan completed" if status == "completed" else "Reassessed remaining exposure"
+    status, message = review_incident(state)
     return {
         "current_action_id": None,
         "status": status,
@@ -85,13 +104,13 @@ def review_node(state: IncidentState) -> dict:
 
 
 def route_after_review(state: IncidentState) -> str:
-    return "end" if state.status in {"completed", "stopped_safely"} else "select_action"
+    return "end" if state.status in {"completed", "stopped_safely"} else "plan"
 
 
-def build_graph():
+def build_graph(model: Any | None = None):
     builder = StateGraph(IncidentState)
-    builder.add_node("assess", assess_node)
-    builder.add_node("plan", plan_node)
+    builder.add_node("assess", lambda state: assess_node(state, model))
+    builder.add_node("plan", lambda state: plan_node(state, model))
     builder.add_node("select_action", select_action_node)
     builder.add_node("execute", execute_tool_node)
     builder.add_node("review", review_node)
@@ -101,7 +120,7 @@ def build_graph():
     builder.add_edge("plan", "select_action")
     builder.add_conditional_edges("select_action", route_after_selection, {"execute": "execute", "end": END})
     builder.add_edge("execute", "review")
-    builder.add_conditional_edges("review", route_after_review, {"select_action": "select_action", "end": END})
+    builder.add_conditional_edges("review", route_after_review, {"plan": "plan", "end": END})
     return builder.compile()
 
 
@@ -113,6 +132,7 @@ def run_incident(
     selected_exposures: list[str] | None = None,
     approved_action_ids: list[str] | None = None,
     completed_action_ids: list[str] | None = None,
+    use_llm: bool | None = None,
 ) -> IncidentState:
     initial = IncidentState(
         description=description,
@@ -120,5 +140,32 @@ def run_incident(
         approved_action_ids=approved_action_ids or [],
         completed_action_ids=completed_action_ids or [],
     )
-    return IncidentState.model_validate(GRAPH.invoke(initial))
+    model = get_optional_chat_model() if use_llm is not False else None
+    graph = build_graph(model) if model is not None else GRAPH
+    return IncidentState.model_validate(graph.invoke(initial))
 
+
+def continue_incident(
+    state: IncidentState,
+    additional_information: str | None = None,
+    selected_exposures: list[str] | None = None,
+    approved_action_ids: list[str] | None = None,
+    use_llm: bool | None = None,
+) -> IncidentState:
+    """Resume an existing incident after approval or newly discovered exposure."""
+    initial = state.model_copy(deep=True)
+    if additional_information and additional_information.strip():
+        initial.incident_updates.append(additional_information.strip())
+        initial.activity_log.append("Received new incident information; reassessing the response plan")
+    initial.selected_exposures = list(
+        dict.fromkeys([*initial.selected_exposures, *(selected_exposures or [])])
+    )
+    initial.approved_action_ids = list(
+        dict.fromkeys([*initial.approved_action_ids, *(approved_action_ids or [])])
+    )
+    initial.current_action_id = None
+    initial.status = "assessing"
+
+    model = get_optional_chat_model() if use_llm is not False else None
+    graph = build_graph(model) if model is not None else GRAPH
+    return IncidentState.model_validate(graph.invoke(initial))
