@@ -66,7 +66,7 @@ first30/
 1. Create and activate a virtual environment: `python3.13 -m venv .venv && source .venv/bin/activate`.
 2. Install dependencies with `python -m pip install -r requirements.txt`.
 3. Copy `.env.example` to `.env`. Add the three temporary AWS credentials from the hackathon access portal, or a Groq key, to enable optional LLM classification and planning.
-4. Run `streamlit run app.py`.
+4. Run `python -m streamlit run app.py`.
 5. Run tests with `python -m pytest -q`.
 
 The application works deterministically without sending incident details to an LLM. When Groq or Bedrock credentials are explicitly configured, the assessor uses structured output to classify the narrative and the planner orders only the tools allowed by the curated response guide. Invalid output or model failure falls back to deterministic rules.
