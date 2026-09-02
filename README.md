@@ -16,11 +16,11 @@ Streamlit UI
 Pydantic IncidentState
     |
 LangGraph orchestrator
-    |-- assess risk
-    |-- plan and prioritise
+    |-- assess risk (curated rules + optional structured LLM)
+    |-- plan and prioritise approved tools
     |-- choose next action
     |-- execute mocked tool
-    `-- review state and replan
+    `-- store observation and replan
          |
          |-- bank action mock
          |-- account action mock
@@ -49,24 +49,41 @@ first30/
 |   |   |-- reporting_tools.py
 |   |   |-- account_tools.py
 |   |   |-- evidence_tools.py
+|   |   |-- notification_tools.py
 |   |   `-- registry.py
 |   |-- data/
 |   |   `-- singapore_guidance.py
 |   `-- utils/
 |       `-- llm.py
 `-- tests/
-    `-- test_scenarios.py
+    |-- test_agent_workflow.py
+    |-- test_scenarios.py
+    `-- test_tools.py
 ```
 
 ## Quick start
 
-1. Create and activate a virtual environment.
-2. Install dependencies with `pip install -r requirements.txt`.
-3. Copy `.env.example` to `.env` and add a Groq key if you want to extend the rule-based starter with LLM reasoning.
+1. Create and activate a virtual environment: `python3.13 -m venv .venv && source .venv/bin/activate`.
+2. Install dependencies with `python -m pip install -r requirements.txt`.
+3. Copy `.env.example` to `.env`. Add a Groq key to enable optional LLM classification and planning.
 4. Run `streamlit run app.py`.
-5. Run tests with `pytest`.
+5. Run tests with `python -m pytest -q`.
 
-The starter works deterministically without sending incident details to an LLM. `src/utils/llm.py` provides optional Groq and Bedrock model wiring for the team to use as it develops the assessor, planner, or reviewer.
+The application works deterministically without sending incident details to an LLM. When Groq or Bedrock credentials are explicitly configured, the assessor uses structured output to classify the narrative and the planner orders only the tools allowed by the curated response guide. Invalid output or model failure falls back to deterministic rules.
+
+## Agent loop
+
+The graph follows this controlled cycle:
+
+```text
+assess -> plan -> select -> execute -> observe/review
+             ^                         |
+             `---------- replan -------'
+```
+
+`IncidentState` is the shared source of truth. It retains risks, approvals, completed action IDs, structured tool results, the activity log, and the current plan version. After each tool result the reviewer either finishes, stops safely, or routes back through the planner. `continue_incident(...)` can resume the same state after an approval or newly discovered information without losing completed work.
+
+The LLM is deliberately bounded: it can classify into known exposure categories and order an incident-specific allow-list, but curated code owns severity, official guidance, available tools, confirmation requirements, and the rule that containment precedes documentation.
 
 ## Demo scenario
 
@@ -96,4 +113,3 @@ The graph should identify critical financial exposure, require approval before p
 - Tools: mocked Python functions
 - Knowledge: curated Singapore scam-response guidance
 - Secrets: local `.env`, excluded from Git
-
