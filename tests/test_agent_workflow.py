@@ -50,17 +50,35 @@ def test_model_cannot_put_reporting_before_account_containment() -> None:
     assert tool_names.index("prepare_singpass_security") < tool_names.index("prepare_police_report")
 
 
-def test_graph_observes_tool_results_and_replans() -> None:
+def test_graph_prepares_guidance_but_does_not_claim_external_completion() -> None:
     state = run_incident(
         "My email password was exposed",
         approved_action_ids=["action-prepare_email_security"],
         use_llm=False,
     )
 
-    assert state.status == "completed"
-    assert len(state.tool_results) == len(state.completed_action_ids)
-    assert state.plan_version == len(state.tool_results)
-    assert any("Observed the tool result" in event for event in state.activity_log)
+    assert state.status == "awaiting_user_confirmation"
+    assert state.current_action_id == "action-prepare_email_security"
+    assert state.prepared_action_ids == ["action-prepare_email_security"]
+    assert state.completed_action_ids == []
+    assert state.tool_results[-1].metadata["security_checklist"]
+
+
+def test_user_confirmation_replans_to_the_next_action() -> None:
+    prepared = run_incident(
+        "My email password was exposed",
+        approved_action_ids=["action-prepare_email_security"],
+        use_llm=False,
+    )
+    resumed = continue_incident(
+        prepared,
+        completed_action_ids=["action-prepare_email_security"],
+        use_llm=False,
+    )
+
+    assert "action-prepare_email_security" in resumed.completed_action_ids
+    assert resumed.status == "awaiting_preparation"
+    assert resumed.current_action_id == "action-create_evidence_summary"
 
 
 def test_new_information_reassesses_without_losing_completed_work() -> None:
@@ -76,7 +94,7 @@ def test_new_information_reassesses_without_losing_completed_work() -> None:
     )
 
     assert "singpass_details" in updated.compromised_assets
-    assert updated.status == "awaiting_confirmation"
+    assert updated.status == "awaiting_preparation"
     assert updated.current_action_id == "action-prepare_singpass_security"
-    assert set(original.completed_action_ids).issubset(updated.completed_action_ids)
+    assert set(original.prepared_action_ids).issubset(updated.prepared_action_ids)
     assert updated.plan_version > original.plan_version

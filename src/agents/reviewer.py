@@ -9,7 +9,7 @@ def next_pending_action(state: IncidentState) -> RecoveryAction | None:
 
 
 def plan_is_complete(state: IncidentState) -> bool:
-    return all(action.status == "completed" for action in state.actions)
+    return all(action.status in {"completed", "skipped"} for action in state.actions)
 
 
 def review_incident(state: IncidentState) -> tuple[str, str]:

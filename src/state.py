@@ -46,7 +46,11 @@ class IncidentState(BaseModel):
     risks: list[Risk] = Field(default_factory=list)
     actions: list[RecoveryAction] = Field(default_factory=list)
     tool_results: list[ToolResult] = Field(default_factory=list)
+    # A prepared action means First30 generated local guidance or a draft. It
+    # never means an external account or report was changed or submitted.
+    prepared_action_ids: list[str] = Field(default_factory=list)
     completed_action_ids: list[str] = Field(default_factory=list)
+    skipped_action_ids: list[str] = Field(default_factory=list)
     approved_action_ids: list[str] = Field(default_factory=list)
     current_action_id: str | None = None
     activity_log: list[str] = Field(default_factory=list)

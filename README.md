@@ -6,7 +6,7 @@ This repository is a proof-of-concept starter for the SimplifyNext Agentic AI Ha
 
 `intake -> assess -> plan -> choose action -> use tool -> review state -> replan`
 
-It intentionally uses mocked recovery tools. It never asks for banking passwords, Singpass passwords, OTPs, or card PINs, and consequential actions require explicit user approval or a hand-off to an official service.
+It intentionally uses mocked recovery tools. It never asks for banking passwords, Singpass passwords, OTPs, or card PINs. Each action has two explicit stages: First30 prepares a local draft or official hand-off, then the user confirms whether they completed the real-world step themselves.
 
 ## Architecture
 
@@ -81,7 +81,7 @@ assess -> plan -> select -> execute -> observe/review
              `---------- replan -------'
 ```
 
-`IncidentState` is the shared source of truth. It retains risks, approvals, completed action IDs, structured tool results, the activity log, and the current plan version. After each tool result the reviewer either finishes, stops safely, or routes back through the planner. `continue_incident(...)` can resume the same state after an approval or newly discovered information without losing completed work.
+`IncidentState` is the shared source of truth. It retains risks, prepared and completed action IDs, structured tool results, the activity log, and the current plan version. A tool result means guidance has been prepared; it never means that a bank, Singpass, email, or police action was performed. `continue_incident(...)` resumes the same state when the user confirms, skips, or adds new information, without losing prior work.
 
 The LLM is deliberately bounded: it can classify into known exposure categories and order an incident-specific allow-list, but curated code owns severity, official guidance, available tools, confirmation requirements, and the rule that containment precedes documentation.
 
@@ -91,7 +91,7 @@ Try:
 
 > I clicked a fake parcel delivery website and entered my DBS credit-card details, OTP and Gmail password.
 
-The graph should identify critical financial exposure, require approval before preparing a bank/card action, preserve evidence, prepare a report, and keep reassessing until no actions remain.
+The graph should identify critical financial exposure, let the user prepare a bank/card hand-off, show the official link and call script, wait for the user to confirm the external step, then move through evidence and report drafts.
 
 ## Safety boundaries
 
