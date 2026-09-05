@@ -30,7 +30,7 @@ class FakeModel:
 
 
 def test_model_classification_is_constrained_to_curated_risks() -> None:
-    exposures, risks, source, _ = assess_incident_with_model(
+    exposures, risks, source, _, facts = assess_incident_with_model(
         "I gave the scammer access to my national digital identity account.",
         [],
         FakeModel(),
@@ -39,10 +39,11 @@ def test_model_classification_is_constrained_to_curated_risks() -> None:
     assert exposures == ["singpass_details"]
     assert risks[0].id == "risk-singpass_details"
     assert source == "curated_rules_plus_llm"
+    assert facts.singpass_access_exposed is True
 
 
 def test_model_cannot_put_reporting_before_account_containment() -> None:
-    _, risks, _, _ = assess_incident_with_model("Identity account exposed", [], FakeModel())
+    _, risks, _, _, _ = assess_incident_with_model("Identity account exposed", [], FakeModel())
     actions, _ = create_plan_with_model(risks, model=FakeModel())
 
     tool_names = [action.tool_name for action in actions]
@@ -98,3 +99,17 @@ def test_new_information_reassesses_without_losing_completed_work() -> None:
     assert updated.current_action_id == "action-prepare_singpass_security"
     assert set(original.prepared_action_ids).issubset(updated.prepared_action_ids)
     assert updated.plan_version > original.plan_version
+
+
+def test_singpass_otp_without_money_or_card_details_does_not_offer_bank_freeze() -> None:
+    state = run_incident(
+        "A caller impersonating the Police asked me to verify my identity. I entered my NRIC, "
+        "Singpass username and OTP, but stopped before making any transfer. I have WhatsApp screenshots.",
+        selected_exposures=["singpass_details", "otp", "personal_information"],
+        use_llm=False,
+    )
+
+    assert state.facts.otp_context == "singpass"
+    assert state.facts.money_transferred == "no"
+    assert "prepare_bank_freeze" not in [action.tool_name for action in state.actions]
+    assert state.current_action_id == "action-prepare_singpass_security"

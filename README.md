@@ -8,6 +8,8 @@ This repository is a proof-of-concept starter for the SimplifyNext Agentic AI Ha
 
 It intentionally uses mocked recovery tools. It never asks for banking passwords, Singpass passwords, OTPs, or card PINs. Each action has two explicit stages: First30 prepares a local draft or official hand-off, then the user confirms whether they completed the real-world step themselves.
 
+The response is context-sensitive: an OTP is classified by its likely use (bank transaction, Singpass, account recovery, or unknown) before a containment action is selected. A Singpass-related OTP does not create a bank-card action unless the incident also indicates a transfer or bank/card exposure.
+
 ## Architecture
 
 ```text
@@ -81,7 +83,11 @@ assess -> plan -> select -> execute -> observe/review
              `---------- replan -------'
 ```
 
-`IncidentState` is the shared source of truth. It retains risks, prepared and completed action IDs, structured tool results, the activity log, and the current plan version. A tool result means guidance has been prepared; it never means that a bank, Singpass, email, or police action was performed. `continue_incident(...)` resumes the same state when the user confirms, skips, or adds new information, without losing prior work.
+`IncidentState` is the shared source of truth. It retains redacted incident facts, risks, prepared and completed action IDs, structured tool results, the activity log, and the current plan version. A tool result means guidance has been prepared; it never means that a bank, Singpass, email, or police action was performed. `continue_incident(...)` resumes the same state when the user confirms, skips, or adds new information, without losing prior work.
+
+## Case preparation
+
+The UI captures non-secret evidence details (timeline, identifiers, and locally saved screenshots), aligns report preparation to Scam, Unauthorised card transaction, or Other cheating case, and creates channel-appropriate trusted-contact drafts. It links to official services but does not sign in, upload evidence, submit reports, or send messages.
 
 The LLM is deliberately bounded: it can classify into known exposure categories and order an incident-specific allow-list, but curated code owns severity, official guidance, available tools, confirmation requirements, and the rule that containment precedes documentation.
 

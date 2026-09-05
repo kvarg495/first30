@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -38,10 +39,31 @@ class ToolResult(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
+class IncidentFacts(BaseModel):
+    """Bounded, redacted facts used to choose context-specific recovery work."""
+
+    otp_context: Literal["bank_transaction", "singpass", "account_recovery", "unknown", "not_disclosed"] = "not_disclosed"
+    money_transferred: Literal["yes", "no", "unknown"] = "unknown"
+    bank_or_card_details_exposed: bool = False
+    singpass_access_exposed: bool = False
+    email_account_exposed: bool = False
+    personal_data_types: list[str] = Field(default_factory=list)
+    scam_channels: list[str] = Field(default_factory=list)
+    impersonated_organisation: str | None = None
+    suspect_identifiers: list[str] = Field(default_factory=list)
+    suspicious_urls: list[str] = Field(default_factory=list)
+    evidence_available: list[str] = Field(default_factory=list)
+
+
 class IncidentState(BaseModel):
     description: str
     incident_updates: list[str] = Field(default_factory=list)
     selected_exposures: list[str] = Field(default_factory=list)
+    facts: IncidentFacts = Field(default_factory=IncidentFacts)
+    selected_bank: str = ""
+    evidence_fields: dict[str, str] = Field(default_factory=dict)
+    report_type: Literal["unauthorised_card_transaction", "scam", "other_cheating"] = "scam"
+    report_fields: dict[str, str] = Field(default_factory=dict)
     compromised_assets: list[str] = Field(default_factory=list)
     risks: list[Risk] = Field(default_factory=list)
     actions: list[RecoveryAction] = Field(default_factory=list)

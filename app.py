@@ -60,6 +60,18 @@ def render_risks(state: IncidentState) -> None:
             st.markdown(f"{icon} **{label} — {risk.title}**")
             st.caption(risk.rationale)
             st.caption(f"Exposure identified: {risk.source_exposure.replace('_', ' ')}")
+    facts = state.facts
+    with st.container(border=True):
+        st.markdown("**What First30 understood**")
+        st.write(
+            f"OTP context: **{facts.otp_context.replace('_', ' ')}** · "
+            f"Money transferred: **{facts.money_transferred}**"
+        )
+        if facts.impersonated_organisation or facts.scam_channels:
+            st.caption(
+                f"Channel: {', '.join(facts.scam_channels) or 'not recorded'} · "
+                f"Impersonated organisation: {facts.impersonated_organisation or 'not recorded'}"
+            )
 
 
 def render_plan(state: IncidentState) -> None:
@@ -81,6 +93,14 @@ def render_plan(state: IncidentState) -> None:
             st.caption(action.description)
 
 
+def render_scamshield_support() -> None:
+    with st.container(border=True):
+        st.markdown("**ScamShield assistance**")
+        st.caption("Use ScamShield for official scam guidance and assistance. This is separate from a police report or a bank/account-security step.")
+        st.link_button("Open ScamShield guidance", "https://www.scamshield.gov.sg/i-have-been-scammed/", use_container_width=True)
+        st.caption("If you are unsure whether something is a scam, the ScamShield Helpline is 1799.")
+
+
 def result_for_action(state: IncidentState, action: RecoveryAction) -> ToolResult | None:
     return next((result for result in reversed(state.tool_results) if result.action == action.tool_name), None)
 
@@ -93,15 +113,18 @@ def render_prepared_artifact(result: ToolResult) -> None:
         st.link_button("Open official service", official_url, use_container_width=True)
     if metadata.get("support_note"):
         st.info(metadata["support_note"])
+    if metadata.get("contact_route"):
+        st.info(f"**Official contact route:** {metadata['contact_route']}")
     if metadata.get("call_script"):
         st.markdown("**Suggested call script**")
-        st.code(metadata["call_script"], language=None)
+        st.text_area("Call script", metadata["call_script"], height=110, disabled=True, label_visibility="collapsed")
     if metadata.get("security_checklist"):
         st.markdown("**Security checklist**")
-        st.write(metadata["security_checklist"])
+        for item in metadata["security_checklist"].split("; "):
+            st.write(f"- {item.strip().capitalize()}")
     if metadata.get("content"):
         st.markdown("**Draft to review**")
-        st.code(metadata["content"], language="markdown")
+        st.text_area("Prepared draft", metadata["content"], height=260, disabled=True, label_visibility="collapsed")
         extension = "eml.txt" if metadata.get("format") == "email" else "md"
         st.download_button(
             "Download draft",
@@ -120,6 +143,52 @@ def stop_response(state: IncidentState) -> None:
     st.session_state.incident = paused
 
 
+def personalise_action_explanation(state: IncidentState, action: RecoveryAction) -> str:
+    facts = state.facts
+    if action.tool_name == "prepare_singpass_security":
+        return "Your story indicates a Singpass-related verification flow. No card or bank credentials were identified, so this is prioritised ahead of reporting."
+    if action.tool_name == "prepare_bank_freeze":
+        return "This route is shown because you reported card/bank exposure, a financial OTP, or a completed transfer."
+    if action.tool_name == "create_evidence_summary":
+        return "First30 will turn your recorded timeline, identifiers, URLs, and available screenshots into a local evidence pack."
+    if action.tool_name == "prepare_police_report":
+        return "First30 will prepare the fields you need for the relevant SPF report type; it will not submit the report."
+    if action.tool_name == "draft_contact_notification":
+        return "Identity or account exposure can be used to impersonate you. This prepares an unsent warning in your chosen format."
+    return action.description
+
+
+def collect_preparation_details(state: IncidentState, action: RecoveryAction) -> IncidentState:
+    """Collect only non-secret case details before a local tool creates its draft."""
+    updated = state.model_copy(deep=True)
+    if action.tool_name == "prepare_bank_freeze":
+        choice = st.selectbox("Which bank is involved?", ["I don't know yet", "DBS / POSB"], key=f"bank-{action.id}")
+        updated.selected_bank = "" if choice == "I don't know yet" else choice
+    elif action.tool_name == "create_evidence_summary":
+        st.markdown("**Evidence capture** — do not upload or enter credentials, OTPs, PINs, or full card numbers.")
+        updated.evidence_fields = {
+            "incident_date_and_time": st.text_input("Approximate incident date and time", value=state.evidence_fields.get("incident_date_and_time", ""), key=f"evidence-time-{action.id}"),
+            "scammer_identifier": st.text_input("Scammer number, username, or account identifier", value=state.evidence_fields.get("scammer_identifier", ""), key=f"evidence-suspect-{action.id}"),
+            "additional_evidence": st.text_area("Screenshots or items saved locally", value=state.evidence_fields.get("additional_evidence", ""), key=f"evidence-items-{action.id}", placeholder="For example: WhatsApp chat screenshot, call log, fake website screenshot"),
+        }
+        if state.facts.evidence_available:
+            st.info(f"Already identified: {', '.join(state.facts.evidence_available).replace('_', ' ')}")
+    elif action.tool_name == "prepare_police_report":
+        report_type = st.selectbox(
+            "Which report preparation best fits this case?",
+            ["scam", "unauthorised_card_transaction", "other_cheating"],
+            format_func=lambda value: {"scam": "Scam", "unauthorised_card_transaction": "Unauthorised card transaction", "other_cheating": "Other cheating case"}[value],
+            key=f"report-type-{action.id}",
+        )
+        updated.report_type = report_type
+        updated.report_fields = {
+            "when_and_where": st.text_input("When did it happen, and where/how did it take place?", value=state.report_fields.get("when_and_where", ""), key=f"report-when-{action.id}"),
+            "how_discovered": st.text_area("How did you discover it? Include transaction count/amount/time period if relevant.", value=state.report_fields.get("how_discovered", ""), key=f"report-discovery-{action.id}"),
+            "items_and_suspects": st.text_area("Items involved, suspect details, and attachments available", value=state.report_fields.get("items_and_suspects", ""), key=f"report-items-{action.id}"),
+        }
+    return updated
+
+
 def render_confirmation(state: IncidentState) -> None:
     if state.status not in {"awaiting_preparation", "awaiting_user_confirmation"} or not state.current_action_id:
         return
@@ -127,16 +196,17 @@ def render_confirmation(state: IncidentState) -> None:
     action = next(item for item in state.actions if item.id == state.current_action_id)
     st.warning("Action needed now")
     st.markdown(f"### {action.title}")
-    st.write(action.description)
+    st.write(personalise_action_explanation(state, action))
     st.caption(
         "First30 will only prepare a safe hand-off. It will not access your bank, "
         "Singpass, passwords, OTPs, PINs, or full card details."
     )
     if state.status == "awaiting_preparation":
+        prepared_state = collect_preparation_details(state, action)
         st.caption("Preparing guidance creates a local draft or official hand-off only. It does not perform the real-world action.")
         if st.button("Prepare guidance", type="primary", use_container_width=True):
             st.session_state.incident = continue_incident(
-                state,
+                prepared_state,
                 approved_action_ids=[action.id],
                 use_llm=st.session_state.get("use_llm", False),
             )
@@ -169,8 +239,8 @@ def render_confirmation(state: IncidentState) -> None:
 
 
 def render_activity(state: IncidentState) -> None:
-    with st.expander("Why First30 chose this", expanded=True):
-        for event in state.activity_log:
+    with st.expander("Response timeline", expanded=True):
+        for event in state.activity_log[-6:]:
             st.write(f"✓ {event}")
 
 
@@ -191,6 +261,7 @@ def render_state(state: IncidentState) -> None:
 
     render_risks(state)
     render_plan(state)
+    render_scamshield_support()
     render_confirmation(state)
 
     if state.status == "completed":

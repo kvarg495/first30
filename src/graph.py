@@ -14,13 +14,14 @@ from src.utils.llm import get_optional_chat_model
 
 def assess_node(state: IncidentState, model: Any | None = None) -> dict:
     narrative = "\n".join([state.description, *state.incident_updates])
-    exposures, risks, source, rationale = assess_incident_with_model(
+    exposures, risks, source, rationale, facts = assess_incident_with_model(
         narrative,
         state.selected_exposures,
         model,
     )
     return {
         "compromised_assets": exposures,
+        "facts": facts,
         "risks": risks,
         "assessment_source": source,
         "status": "planning",
@@ -39,6 +40,7 @@ def plan_node(state: IncidentState, model: Any | None = None) -> dict:
         model,
         state.prepared_action_ids,
         state.skipped_action_ids,
+        state.facts,
     )
     remaining = sum(action.status == "pending" for action in actions)
     return {

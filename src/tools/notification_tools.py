@@ -4,16 +4,11 @@ from src.state import IncidentState, ToolResult
 def draft_contact_notification(state: IncidentState) -> ToolResult:
     """Prepare, but never send, a warning for a user-selected trusted contact."""
     exposures = ", ".join(state.compromised_assets or state.selected_exposures) or "some personal information"
-    template = f"""Subject: Please be alert for suspicious messages using my details
+    template = f"""Please be alert: I may have been affected by a scam involving {exposures}.
 
-Hi [Name],
-
-I may have been affected by a scam involving {exposures}. Please be cautious of any unexpected messages, payment requests, or account-recovery requests that appear to come from me. Do not send money or share passwords, OTPs, or personal details in response.
+Please be cautious of unexpected messages, payment requests, links, or account-recovery requests that appear to come from me. Do not send money or share passwords, OTPs, or personal details.
 
 I will confirm any urgent request through a separate trusted channel.
-
-Thanks,
-[Your name]
 """
     return ToolResult(
         success=True,
