@@ -186,6 +186,13 @@ def collect_preparation_details(state: IncidentState, action: RecoveryAction) ->
             "how_discovered": st.text_area("How did you discover it? Include transaction count/amount/time period if relevant.", value=state.report_fields.get("how_discovered", ""), key=f"report-discovery-{action.id}"),
             "items_and_suspects": st.text_area("Items involved, suspect details, and attachments available", value=state.report_fields.get("items_and_suspects", ""), key=f"report-items-{action.id}"),
         }
+    elif action.tool_name == "draft_contact_notification":
+        updated.notification_channel = st.selectbox(
+            "Prepare this warning for",
+            ["WhatsApp", "SMS", "Telegram", "Email"],
+            index=["WhatsApp", "SMS", "Telegram", "Email"].index(state.notification_channel),
+            key=f"notification-channel-{action.id}",
+        )
     return updated
 
 

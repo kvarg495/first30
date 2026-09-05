@@ -61,6 +61,7 @@ class IncidentState(BaseModel):
     selected_exposures: list[str] = Field(default_factory=list)
     facts: IncidentFacts = Field(default_factory=IncidentFacts)
     selected_bank: str = ""
+    notification_channel: Literal["WhatsApp", "SMS", "Telegram", "Email"] = "WhatsApp"
     evidence_fields: dict[str, str] = Field(default_factory=dict)
     report_type: Literal["unauthorised_card_transaction", "scam", "other_cheating"] = "scam"
     report_fields: dict[str, str] = Field(default_factory=dict)
