@@ -22,6 +22,10 @@ def prepare_email_security(state: IncidentState) -> ToolResult:
 
 
 def prepare_singpass_security(state: IncidentState) -> ToolResult:
+    script = (
+        "I believe I disclosed Singpass-related identity information and an OTP during an impersonation scam. "
+        "I need guidance to secure my account. I will use only this verified official support route and will not share any further codes."
+    )
     return ToolResult(
         success=True,
         action="prepare_singpass_security",
@@ -32,5 +36,6 @@ def prepare_singpass_security(state: IncidentState) -> ToolResult:
             "handoff": "official-singpass-channel",
             "official_contact_url": OFFICIAL_HANDOFFS["singpass_contact"],
             "support_note": "Use the official Singpass contact route; scam support is available 24/7.",
+            "call_script": script,
         },
     )

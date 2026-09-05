@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from src.data.singapore_guidance import ACTION_CATALOG, SCAM_RESPONSE_GUIDE
-from src.state import RecoveryAction, Risk
+from src.state import IncidentFacts, RecoveryAction, Risk
 
 
 ToolName = Literal[
@@ -25,11 +25,32 @@ class PlanDecision(BaseModel):
     rationale: str = ""
 
 
-def create_plan(risks: list[Risk], completed_action_ids: list[str] | None = None) -> list[RecoveryAction]:
+def create_plan(
+    risks: list[Risk],
+    completed_action_ids: list[str] | None = None,
+    prepared_action_ids: list[str] | None = None,
+    skipped_action_ids: list[str] | None = None,
+    facts: IncidentFacts | None = None,
+) -> list[RecoveryAction]:
     completed = set(completed_action_ids or [])
-    tool_names: set[str] = set()
-    for risk in risks:
-        tool_names.update(SCAM_RESPONSE_GUIDE[risk.source_exposure]["actions"])
+    prepared = set(prepared_action_ids or [])
+    skipped = set(skipped_action_ids or [])
+    if facts is None:
+        tool_names: set[str] = set()
+        for risk in risks:
+            tool_names.update(SCAM_RESPONSE_GUIDE[risk.source_exposure]["actions"])
+    else:
+        tool_names = {"create_evidence_summary", "prepare_police_report"}
+        # A generic OTP never creates a bank action. Containment follows the
+        # channel the OTP was actually used for.
+        if facts.bank_or_card_details_exposed or facts.money_transferred == "yes" or facts.otp_context == "bank_transaction":
+            tool_names.add("prepare_bank_freeze")
+        if facts.singpass_access_exposed or facts.otp_context == "singpass":
+            tool_names.add("prepare_singpass_security")
+        if facts.email_account_exposed or facts.otp_context == "account_recovery":
+            tool_names.add("prepare_email_security")
+        if facts.personal_data_types or facts.email_account_exposed or facts.singpass_access_exposed:
+            tool_names.add("draft_contact_notification")
 
     actions = []
     for tool_name in tool_names:
@@ -43,7 +64,15 @@ def create_plan(risks: list[Risk], completed_action_ids: list[str] | None = None
                 tool_name=tool_name,
                 priority=definition["priority"],
                 requires_confirmation=definition["requires_confirmation"],
-                status="completed" if action_id in completed else "pending",
+                status=(
+                    "completed"
+                    if action_id in completed
+                    else "skipped"
+                    if action_id in skipped
+                    else "prepared"
+                    if action_id in prepared
+                    else "pending"
+                ),
             )
         )
     return sorted(actions, key=lambda item: item.priority, reverse=True)
@@ -53,9 +82,18 @@ def create_plan_with_model(
     risks: list[Risk],
     completed_action_ids: list[str] | None = None,
     model: Any | None = None,
+    prepared_action_ids: list[str] | None = None,
+    skipped_action_ids: list[str] | None = None,
+    facts: IncidentFacts | None = None,
 ) -> tuple[list[RecoveryAction], str]:
     """Create a complete safe plan, optionally using a model to order it."""
-    deterministic_plan = create_plan(risks, completed_action_ids)
+    deterministic_plan = create_plan(
+        risks,
+        completed_action_ids,
+        prepared_action_ids,
+        skipped_action_ids,
+        facts,
+    )
     if model is None or not deterministic_plan:
         return deterministic_plan, "Ordered actions using curated urgency priorities."
 
@@ -73,6 +111,7 @@ Return only the requested structured output. Order every allowed tool exactly on
 Never invent a tool and never place reporting or documentation ahead of urgent account containment.
 
 Risks: {risk_summary}
+Incident facts: {facts.model_dump(exclude_none=True) if facts else {}}
 Allowed tools for this incident: {required_tools}
 Completed action IDs: {completed_action_ids or []}
 """

@@ -36,9 +36,9 @@ def test_consequential_handoffs_require_explicit_confirmation() -> None:
 def test_evidence_summary_is_local_and_contains_incident_details() -> None:
     result = create_evidence_summary(sample_state())
 
-    assert "nothing was uploaded" in result.message
-    assert "fake delivery website" in result.metadata["content"]
-    assert "Evidence to preserve" in result.metadata["content"]
+    assert "nothing was collected, uploaded, or submitted" in result.message
+    assert "Save original screenshots" in result.metadata["preservation_steps"]
+    assert "Do not delete chats" in result.metadata["preservation_steps"]
 
 
 def test_police_report_is_a_draft_with_official_handoff() -> None:
@@ -46,7 +46,9 @@ def test_police_report_is_a_draft_with_official_handoff() -> None:
 
     assert result.metadata["submission"] == "not-submitted"
     assert result.metadata["official_report_url"] == OFFICIAL_HANDOFFS["police_report"]
-    assert "review before submission" in result.metadata["content"].lower()
+    assert result.metadata["report_type"] == "Scam"
+    assert "field_what_happened" in result.metadata
+    assert "field_attachments" in result.metadata
 
 
 def test_contact_notification_is_never_sent() -> None:

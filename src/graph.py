@@ -14,13 +14,14 @@ from src.utils.llm import get_optional_chat_model
 
 def assess_node(state: IncidentState, model: Any | None = None) -> dict:
     narrative = "\n".join([state.description, *state.incident_updates])
-    exposures, risks, source, rationale = assess_incident_with_model(
+    exposures, risks, source, rationale, facts = assess_incident_with_model(
         narrative,
         state.selected_exposures,
         model,
     )
     return {
         "compromised_assets": exposures,
+        "facts": facts,
         "risks": risks,
         "assessment_source": source,
         "status": "planning",
@@ -33,7 +34,14 @@ def assess_node(state: IncidentState, model: Any | None = None) -> dict:
 
 
 def plan_node(state: IncidentState, model: Any | None = None) -> dict:
-    actions, rationale = create_plan_with_model(state.risks, state.completed_action_ids, model)
+    actions, rationale = create_plan_with_model(
+        state.risks,
+        state.completed_action_ids,
+        model,
+        state.prepared_action_ids,
+        state.skipped_action_ids,
+        state.facts,
+    )
     remaining = sum(action.status == "pending" for action in actions)
     return {
         "actions": actions,
@@ -57,11 +65,11 @@ def select_action_node(state: IncidentState) -> dict:
             "status": "stopped_safely",
             "activity_log": [*state.activity_log, "Stopped after reaching the safe loop limit"],
         }
-    if action.requires_confirmation and action.id not in state.approved_action_ids:
+    if action.id not in state.approved_action_ids:
         return {
             "current_action_id": action.id,
-            "status": "awaiting_confirmation",
-            "activity_log": [*state.activity_log, f"Requested approval for: {action.title}"],
+            "status": "awaiting_preparation",
+            "activity_log": [*state.activity_log, f"Waiting to prepare: {action.title}"],
         }
     return {
         "current_action_id": action.id,
@@ -78,19 +86,24 @@ def execute_tool_node(state: IncidentState) -> dict:
     action = next(item for item in state.actions if item.id == state.current_action_id)
     result = TOOL_REGISTRY[action.tool_name](state)
     updated_actions = [item.model_copy() for item in state.actions]
-    completed = list(state.completed_action_ids)
+    prepared = list(state.prepared_action_ids)
     if result.success:
         for item in updated_actions:
             if item.id == action.id:
-                item.status = "completed"
-        if action.id not in completed:
-            completed.append(action.id)
+                item.status = "prepared"
+        if action.id not in prepared:
+            prepared.append(action.id)
     return {
         "actions": updated_actions,
-        "completed_action_ids": completed,
+        "prepared_action_ids": prepared,
         "tool_results": [*state.tool_results, result],
         "loop_count": state.loop_count + 1,
-        "activity_log": [*state.activity_log, result.message],
+        "status": "awaiting_user_confirmation" if result.success else "stopped_safely",
+        "activity_log": [
+            *state.activity_log,
+            result.message,
+            "Guidance is prepared. Waiting for the user to confirm the next step.",
+        ],
     }
 
 
@@ -119,7 +132,9 @@ def build_graph(model: Any | None = None):
     builder.add_edge("assess", "plan")
     builder.add_edge("plan", "select_action")
     builder.add_conditional_edges("select_action", route_after_selection, {"execute": "execute", "end": END})
-    builder.add_edge("execute", "review")
+    # Tools prepare only local artifacts. Pausing here ensures the user, not the
+    # agent, confirms any real-world bank, identity, email, or reporting step.
+    builder.add_edge("execute", END)
     builder.add_conditional_edges("review", route_after_review, {"plan": "plan", "end": END})
     return builder.compile()
 
@@ -150,6 +165,8 @@ def continue_incident(
     additional_information: str | None = None,
     selected_exposures: list[str] | None = None,
     approved_action_ids: list[str] | None = None,
+    completed_action_ids: list[str] | None = None,
+    skipped_action_ids: list[str] | None = None,
     use_llm: bool | None = None,
 ) -> IncidentState:
     """Resume an existing incident after approval or newly discovered exposure."""
@@ -163,9 +180,60 @@ def continue_incident(
     initial.approved_action_ids = list(
         dict.fromkeys([*initial.approved_action_ids, *(approved_action_ids or [])])
     )
+    initial.completed_action_ids = list(
+        dict.fromkeys([*initial.completed_action_ids, *(completed_action_ids or [])])
+    )
+    initial.skipped_action_ids = list(
+        dict.fromkeys([*initial.skipped_action_ids, *(skipped_action_ids or [])])
+    )
     initial.current_action_id = None
     initial.status = "assessing"
 
     model = get_optional_chat_model() if use_llm is not False else None
     graph = build_graph(model) if model is not None else GRAPH
     return IncidentState.model_validate(graph.invoke(initial))
+
+
+def prepare_current_action(state: IncidentState) -> IncidentState:
+    """Prepare the selected local artifact without reassessing the incident."""
+    initial = state.model_copy(deep=True)
+    if not initial.current_action_id:
+        return initial
+    action = next(item for item in initial.actions if item.id == initial.current_action_id)
+    result = TOOL_REGISTRY[action.tool_name](initial)
+    if result.success:
+        action.status = "prepared"
+        if action.id not in initial.prepared_action_ids:
+            initial.prepared_action_ids.append(action.id)
+    initial.tool_results.append(result)
+    initial.loop_count += 1
+    initial.status = "awaiting_user_confirmation" if result.success else "stopped_safely"
+    return initial
+
+
+def advance_incident(
+    state: IncidentState,
+    completed_action_ids: list[str] | None = None,
+    skipped_action_ids: list[str] | None = None,
+) -> IncidentState:
+    """Move to the next action using existing facts; new information uses continue_incident."""
+    initial = state.model_copy(deep=True)
+    initial.completed_action_ids = list(dict.fromkeys([*initial.completed_action_ids, *(completed_action_ids or [])]))
+    initial.skipped_action_ids = list(dict.fromkeys([*initial.skipped_action_ids, *(skipped_action_ids or [])]))
+    actions, _ = create_plan_with_model(
+        initial.risks,
+        initial.completed_action_ids,
+        None,
+        initial.prepared_action_ids,
+        initial.skipped_action_ids,
+        initial.facts,
+    )
+    initial.actions = actions
+    next_action = next_pending_action(initial)
+    if next_action is None:
+        initial.current_action_id = None
+        initial.status = "completed"
+    else:
+        initial.current_action_id = next_action.id
+        initial.status = "awaiting_preparation"
+    return initial

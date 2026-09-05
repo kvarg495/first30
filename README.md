@@ -6,7 +6,9 @@ This repository is a proof-of-concept starter for the SimplifyNext Agentic AI Ha
 
 `intake -> assess -> plan -> choose action -> use tool -> review state -> replan`
 
-It intentionally uses mocked recovery tools. It never asks for banking passwords, Singpass passwords, OTPs, or card PINs, and consequential actions require explicit user approval or a hand-off to an official service.
+It intentionally uses mocked recovery tools. It never asks for banking passwords, Singpass passwords, OTPs, or card PINs. Each action has two explicit stages: First30 prepares a local draft or official hand-off, then the user confirms whether they completed the real-world step themselves.
+
+The response is context-sensitive: an OTP is classified by its likely use (bank transaction, Singpass, account recovery, or unknown) before a containment action is selected. A Singpass-related OTP does not create a bank-card action unless the incident also indicates a transfer or bank/card exposure.
 
 ## Architecture
 
@@ -81,7 +83,11 @@ assess -> plan -> select -> execute -> observe/review
              `---------- replan -------'
 ```
 
-`IncidentState` is the shared source of truth. It retains risks, approvals, completed action IDs, structured tool results, the activity log, and the current plan version. After each tool result the reviewer either finishes, stops safely, or routes back through the planner. `continue_incident(...)` can resume the same state after an approval or newly discovered information without losing completed work.
+`IncidentState` is the shared source of truth. It retains redacted incident facts, risks, prepared and completed action IDs, structured tool results, the activity log, and the current plan version. A tool result means guidance has been prepared; it never means that a bank, Singpass, email, or police action was performed. `continue_incident(...)` resumes the same state when the user confirms, skips, or adds new information, without losing prior work.
+
+## Case preparation
+
+The UI keeps ScamShield guidance visible, gives one concise reason for the current priority, and advances through an existing case without repeatedly reassessing it. Evidence preparation is preservation guidance only: First30 does not collect or upload screenshots. Police-report preparation shows copyable SPF-style field suggestions drawn from the original incident facts. Trusted-contact drafts are channel-appropriate and editable. The prototype links to official services but does not sign in, upload evidence, submit reports, or send messages.
 
 The LLM is deliberately bounded: it can classify into known exposure categories and order an incident-specific allow-list, but curated code owns severity, official guidance, available tools, confirmation requirements, and the rule that containment precedes documentation.
 
@@ -91,7 +97,7 @@ Try:
 
 > I clicked a fake parcel delivery website and entered my DBS credit-card details, OTP and Gmail password.
 
-The graph should identify critical financial exposure, require approval before preparing a bank/card action, preserve evidence, prepare a report, and keep reassessing until no actions remain.
+The graph should identify critical financial exposure, let the user prepare a bank/card hand-off, show the official link and call script, wait for the user to confirm the external step, then move through evidence and report drafts.
 
 ## Safety boundaries
 
