@@ -192,3 +192,48 @@ def continue_incident(
     model = get_optional_chat_model() if use_llm is not False else None
     graph = build_graph(model) if model is not None else GRAPH
     return IncidentState.model_validate(graph.invoke(initial))
+
+
+def prepare_current_action(state: IncidentState) -> IncidentState:
+    """Prepare the selected local artifact without reassessing the incident."""
+    initial = state.model_copy(deep=True)
+    if not initial.current_action_id:
+        return initial
+    action = next(item for item in initial.actions if item.id == initial.current_action_id)
+    result = TOOL_REGISTRY[action.tool_name](initial)
+    if result.success:
+        action.status = "prepared"
+        if action.id not in initial.prepared_action_ids:
+            initial.prepared_action_ids.append(action.id)
+    initial.tool_results.append(result)
+    initial.loop_count += 1
+    initial.status = "awaiting_user_confirmation" if result.success else "stopped_safely"
+    return initial
+
+
+def advance_incident(
+    state: IncidentState,
+    completed_action_ids: list[str] | None = None,
+    skipped_action_ids: list[str] | None = None,
+) -> IncidentState:
+    """Move to the next action using existing facts; new information uses continue_incident."""
+    initial = state.model_copy(deep=True)
+    initial.completed_action_ids = list(dict.fromkeys([*initial.completed_action_ids, *(completed_action_ids or [])]))
+    initial.skipped_action_ids = list(dict.fromkeys([*initial.skipped_action_ids, *(skipped_action_ids or [])]))
+    actions, _ = create_plan_with_model(
+        initial.risks,
+        initial.completed_action_ids,
+        None,
+        initial.prepared_action_ids,
+        initial.skipped_action_ids,
+        initial.facts,
+    )
+    initial.actions = actions
+    next_action = next_pending_action(initial)
+    if next_action is None:
+        initial.current_action_id = None
+        initial.status = "completed"
+    else:
+        initial.current_action_id = next_action.id
+        initial.status = "awaiting_preparation"
+    return initial

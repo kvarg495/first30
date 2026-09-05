@@ -87,7 +87,7 @@ assess -> plan -> select -> execute -> observe/review
 
 ## Case preparation
 
-The UI captures non-secret evidence details (timeline, identifiers, and locally saved screenshots), aligns report preparation to Scam, Unauthorised card transaction, or Other cheating case, and creates channel-appropriate trusted-contact drafts. It links to official services but does not sign in, upload evidence, submit reports, or send messages.
+The UI keeps ScamShield guidance visible, gives one concise reason for the current priority, and advances through an existing case without repeatedly reassessing it. Evidence preparation is preservation guidance only: First30 does not collect or upload screenshots. Police-report preparation shows copyable SPF-style field suggestions drawn from the original incident facts. Trusted-contact drafts are channel-appropriate and editable. The prototype links to official services but does not sign in, upload evidence, submit reports, or send messages.
 
 The LLM is deliberately bounded: it can classify into known exposure categories and order an incident-specific allow-list, but curated code owns severity, official guidance, available tools, confirmation requirements, and the rule that containment precedes documentation.
 

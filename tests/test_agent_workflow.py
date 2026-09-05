@@ -1,6 +1,6 @@
 from src.agents.assessor import ExposureAssessment, assess_incident_with_model
 from src.agents.planner import PlanDecision, create_plan_with_model
-from src.graph import continue_incident, run_incident
+from src.graph import advance_incident, continue_incident, prepare_current_action, run_incident
 
 
 class FakeModel:
@@ -113,3 +113,13 @@ def test_singpass_otp_without_money_or_card_details_does_not_offer_bank_freeze()
     assert state.facts.money_transferred == "no"
     assert "prepare_bank_freeze" not in [action.tool_name for action in state.actions]
     assert state.current_action_id == "action-prepare_singpass_security"
+
+
+def test_preparing_and_advancing_do_not_reassess_or_repeat_the_plan() -> None:
+    initial = run_incident("My email password was exposed", use_llm=False)
+    prepared = prepare_current_action(initial)
+    advanced = advance_incident(prepared, completed_action_ids=[prepared.current_action_id])
+
+    assert prepared.plan_version == initial.plan_version
+    assert advanced.plan_version == initial.plan_version
+    assert advanced.current_action_id == "action-create_evidence_summary"
