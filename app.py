@@ -8,6 +8,7 @@ import streamlit as st
 from src.graph import advance_incident, prepare_current_action, reopen_action, run_incident
 from src.data.singapore_guidance import OFFICIAL_HANDOFFS
 from src.state import ExposureFinding, IncidentIntake, IncidentState, RecoveryAction, Risk, Severity, ToolResult
+from src.ui.checklists import render_checklist
 from src.utils.images import ImageValidationError, NormalizedImage, normalize_uploads
 from src.utils.llm import get_analysis_configuration
 
@@ -98,7 +99,7 @@ def copyable_text(label: str, value: str, key: str, height: int = 150) -> None:
     st.code(edited, language=None, wrap_lines=True, height=min(height, 180))
 
 
-def report_fields(result: ToolResult, revision: int) -> None:
+def report_fields(result: ToolResult, revision: int, action_id: str, *, completed: bool = False) -> None:
     metadata = result.metadata
     fields = result.artifact.report_fields if result.artifact else metadata
     st.markdown(f"**Suggested entries for the SPF {metadata.get('report_type', 'scam')} form**")
@@ -107,7 +108,7 @@ def report_fields(result: ToolResult, revision: int) -> None:
         "field_when_where": "When and where it happened", "field_what_happened": "Description of what happened",
         "field_discovery": "How the incident was discovered", "field_money_transactions": "Transactions or money involved",
         "field_items_involved": "Items or information involved", "field_victims": "Victims involved",
-        "field_suspects": "Suspects involved", "field_attachments": "Attachments to prepare",
+        "field_suspects": "Suspects involved",
     }
     for field, label in labels.items():
         copyable_text(label, fields.get(field, "Not recorded"), f"r{revision}_{field}", 100 if field == "field_what_happened" else 74)
@@ -118,36 +119,60 @@ def report_fields(result: ToolResult, revision: int) -> None:
     st.markdown("**Copy the complete report draft**")
     st.code(compiled, language=None, wrap_lines=True, height=240)
 
+    attachment_items = metadata.get("attachment_checklist", [])
+    if not isinstance(attachment_items, list):
+        attachment_items = []
+    st.markdown("**Attachments to prepare**")
+    st.caption("Check these off as you gather the original files for the official report.")
+    render_checklist(
+        [str(item) for item in attachment_items],
+        f"report_attachments_r{revision}_{action_id}",
+        disabled=completed,
+    )
 
-def render_artifact(state: IncidentState, action: RecoveryAction, result: ToolResult) -> None:
+
+def render_artifact(state: IncidentState, action: RecoveryAction, result: ToolResult) -> bool:
     metadata = result.metadata
     st.success("Guidance prepared locally. Nothing has been submitted, sent, or changed in an external account.")
+    completion_ready = True
     if result.artifact:
         artifact = result.artifact
         st.write(artifact.summary)
         if artifact.instructions:
             st.markdown("**What to do**")
-            for index, instruction in enumerate(artifact.instructions, start=1):
-                st.write(f"{index}. {instruction}")
+            if action.tool_name == "create_evidence_summary":
+                completion_ready = render_checklist(
+                    artifact.instructions,
+                    f"evidence_check_r{state.case_revision}_{action.id}",
+                    disabled=action.status == "completed",
+                )
+            else:
+                for index, instruction in enumerate(artifact.instructions, start=1):
+                    st.write(f"{index}. {instruction}")
         for route in artifact.official_routes:
             if route.phone:
                 st.info(route.phone)
             if route.note:
                 st.caption(route.note)
             if route.url:
-                st.link_button(route.label, route.url, icon=":material/open_in_new:", use_container_width=True)
+                st.link_button(route.label, route.url, icon=":material/open_in_new:", width="content")
         if artifact.report_fields:
-            report_fields(result, state.case_revision)
+            report_fields(
+                result,
+                state.case_revision,
+                action.id,
+                completed=action.status == "completed",
+            )
         for block in artifact.copy_blocks:
             copyable_text(block.title, block.text, f"r{state.case_revision}_{action.id}_{block.id}", 175)
-        return
+        return completion_ready
     official_url = metadata.get("official_guidance_url") or metadata.get("official_contact_url") or metadata.get("official_report_url")
     if metadata.get("contact_route"):
         st.info(metadata["contact_route"])
     if metadata.get("support_note"):
         st.info(metadata["support_note"])
     if official_url:
-        st.link_button("Open official service", official_url, use_container_width=True)
+        st.link_button("Open official service", official_url, width="content")
     if metadata.get("security_checklist"):
         st.markdown("**Account-security checklist**")
         for item in metadata["security_checklist"].split("; "):
@@ -156,13 +181,22 @@ def render_artifact(state: IncidentState, action: RecoveryAction, result: ToolRe
         copyable_text("Suggested support script", metadata["call_script"], f"r{state.case_revision}_{action.id}_script")
     if action.tool_name == "create_evidence_summary":
         st.markdown("**How to preserve evidence**")
-        for step in metadata.get("preservation_steps", "").splitlines():
-            st.markdown(f"- {step}")
+        completion_ready = render_checklist(
+            metadata.get("preservation_steps", "").splitlines(),
+            f"evidence_check_r{state.case_revision}_{action.id}",
+            disabled=action.status == "completed",
+        )
         st.caption(f"Already mentioned: {metadata.get('evidence_available', 'None identified yet')}.")
     if action.tool_name == "prepare_police_report":
-        report_fields(result, state.case_revision)
+        report_fields(
+            result,
+            state.case_revision,
+            action.id,
+            completed=action.status == "completed",
+        )
     if metadata.get("content"):
         copyable_text("Editable message draft", metadata["content"], f"r{state.case_revision}_{action.id}_message", 175)
+    return completion_ready
 
 
 def risk_evidence(state: IncidentState, risk: Risk) -> list[str]:
@@ -182,7 +216,7 @@ def risk_evidence(state: IncidentState, risk: Risk) -> list[str]:
     return evidence or ["The category was identified from the incident narrative."]
 
 
-@st.dialog("Risk details", width="large", icon=":material/shield:")
+@st.dialog("Risk details", width="medium", icon=":material/shield:")
 def risk_dialog(state: IncidentState, risk: Risk) -> None:
     label, _ = SEVERITY_LABELS[risk.severity]
     finding = next((item for item in state.facts.exposure_findings if item.category == risk.source_exposure), None)
@@ -203,7 +237,7 @@ def risk_dialog(state: IncidentState, risk: Risk) -> None:
         st.caption("No specific conflict was identified. Confirm the assessment against your own records.")
 
 
-@st.dialog("Finding needs confirmation", width="large", icon=":material/help:")
+@st.dialog("Finding needs confirmation", width="medium", icon=":material/help:")
 def possible_finding_dialog(finding: ExposureFinding) -> None:
     st.markdown(f"## {finding.category.replace('_', ' ').title()}")
     st.warning("This was not confirmed and did not create a required recovery step.")
@@ -214,7 +248,7 @@ def possible_finding_dialog(finding: ExposureFinding) -> None:
     st.caption("Return to Incident Details and clarify what was or was not shared, then resubmit the case.")
 
 
-@st.dialog("Official support", width="large", icon=":material/support_agent:")
+@st.dialog("Official support", width="medium", icon=":material/support_agent:")
 def support_dialog(kind: str, state: IncidentState) -> None:
     if kind == "check":
         st.markdown("## Check the suspicious contact and link")
@@ -225,21 +259,21 @@ def support_dialog(kind: str, state: IncidentState) -> None:
             st.info("Website link to check: " + ", ".join(state.facts.suspicious_urls))
         if not state.facts.suspect_identifiers and not state.facts.suspicious_urls:
             st.caption("No phone number or URL was supplied. You can still paste the suspicious message into ScamShield.")
-        st.link_button("Open ScamShield checking guide", OFFICIAL_HANDOFFS["scamshield_check"], icon=":material/open_in_new:", use_container_width=True)
+        st.link_button("Open ScamShield checking guide", OFFICIAL_HANDOFFS["scamshield_check"], icon=":material/open_in_new:", width="content")
     elif kind == "report":
         st.markdown("## Report the scam in the ScamShield app")
         st.write("Use the app to report the suspicious call, message, or website so it can be reviewed for blocking and detection.")
         st.warning("A ScamShield report is not an official police report. If you were scammed or lost money, also lodge an SPF report.")
-        st.link_button("Open ScamShield reporting guide", OFFICIAL_HANDOFFS["scamshield_report"], icon=":material/open_in_new:", use_container_width=True)
+        st.link_button("Open ScamShield reporting guide", OFFICIAL_HANDOFFS["scamshield_report"], icon=":material/open_in_new:", width="content")
     else:
         st.markdown("## Police help and reporting")
         st.error("For immediate police assistance, call 999. If it is unsafe to speak, SMS 70999.")
         st.info("To provide non-emergency crime-related information, call the Police Hotline at 1800 255 0000.")
-        st.link_button("Lodge a non-urgent police report", OFFICIAL_HANDOFFS["police_report"], icon=":material/open_in_new:", use_container_width=True)
-        st.link_button("View official SPF contacts", OFFICIAL_HANDOFFS["police_contact"], icon=":material/open_in_new:", use_container_width=True)
+        st.link_button("Lodge a non-urgent police report", OFFICIAL_HANDOFFS["police_report"], icon=":material/open_in_new:", width="content")
+        st.link_button("View official SPF contacts", OFFICIAL_HANDOFFS["police_contact"], icon=":material/open_in_new:", width="content")
 
 
-@st.dialog("Recovery step", width="large", icon=":material/task_alt:")
+@st.dialog("Recovery step", width="medium", icon=":material/task_alt:")
 def action_dialog(state: IncidentState, action_id: str) -> None:
     state = st.session_state.get("incident", state)
     action = next(item for item in state.actions if item.id == action_id)
@@ -248,14 +282,15 @@ def action_dialog(state: IncidentState, action_id: str) -> None:
     st.caption("Never enter passwords, OTPs, PINs, recovery codes, or full card numbers into First30.")
     if action.status == "skipped":
         st.warning("This step is skipped and still prevents the plan from reaching 100%.")
-        if st.button("Reopen this step", type="primary", use_container_width=True, key=f"reopen_{state.case_revision}_{action.id}"):
+        if st.button("Reopen this step", type="primary", width="content", key=f"reopen_{state.case_revision}_{action.id}"):
             st.session_state.incident = reopen_action(state, action.id)
             st.rerun()
         return
 
     result = result_for_action(state, action)
+    completion_ready = True
     if action.status in {"prepared", "completed"} and result:
-        render_artifact(state, action, result)
+        completion_ready = render_artifact(state, action, result)
     elif action.id == state.current_action_id:
         prepared_state = state.model_copy(deep=True)
         if action.tool_name == "prepare_bank_freeze":
@@ -265,7 +300,7 @@ def action_dialog(state: IncidentState, action_id: str) -> None:
             prepared_state.selected_bank = "" if selected == "I don't know yet" else selected
         if action.tool_name == "draft_contact_notification":
             prepared_state.notification_channel = st.selectbox("Message channel", ["WhatsApp", "SMS", "Telegram", "Email"], key=f"channel_r{state.case_revision}_{action.id}")
-        if st.button("Prepare tailored guidance", type="primary", use_container_width=True, key=f"prepare_r{state.case_revision}_{action.id}"):
+        if st.button("Prepare tailored guidance", type="primary", width="content", key=f"prepare_r{state.case_revision}_{action.id}"):
             st.session_state.incident = prepare_current_action(prepared_state)
             st.rerun(scope="fragment")
         return
@@ -277,11 +312,19 @@ def action_dialog(state: IncidentState, action_id: str) -> None:
         return
     if action.status == "prepared" and action.id == state.current_action_id:
         complete_label = "I completed this external step" if action.requires_confirmation else "I reviewed and completed this step"
+        if action.tool_name == "create_evidence_summary" and not completion_ready:
+            st.caption("Check every evidence-preservation item to unlock completion.")
         complete, skip = st.columns(2)
-        if complete.button(complete_label, type="primary", use_container_width=True, key=f"complete_r{state.case_revision}_{action.id}"):
+        if complete.button(
+            complete_label,
+            type="primary",
+            width="stretch",
+            disabled=not completion_ready,
+            key=f"complete_r{state.case_revision}_{action.id}",
+        ):
             st.session_state.incident = advance_incident(state, completed_action_ids=[action.id])
             st.rerun()
-        if skip.button("Skip for now", use_container_width=True, key=f"skip_r{state.case_revision}_{action.id}"):
+        if skip.button("Skip for now", width="stretch", key=f"skip_r{state.case_revision}_{action.id}"):
             st.session_state.incident = advance_incident(state, skipped_action_ids=[action.id])
             st.rerun()
 
@@ -292,6 +335,9 @@ def developer_dialog(state: IncidentState) -> None:
     st.markdown("**Analysis configuration**")
     st.write(f"Provider: {str(config['provider']).title()}")
     st.write(f"Model: {config['model']}")
+    if config["provider"] == "bedrock":
+        profile = str(config["aws_profile"])
+        st.write(f"Authentication: IAM Identity Center profile ({profile})" if profile else "Authentication: IAM Identity Center profile not configured")
     st.write(f"Mode used: {state.assessment_source.replace('_', ' ')}")
     st.write(f"Screenshots supplied: {len(state.image_metadata)}")
     if state.image_metadata:
@@ -364,9 +410,9 @@ def incident_details_page() -> None:
             preview_columns = st.columns(min(3, len(normalised)))
             for index, image in enumerate(normalised):
                 with preview_columns[index % len(preview_columns)]:
-                    st.image(image.data, use_container_width=True)
+                    st.image(image.data, width="stretch")
                     st.caption(f"{image.name} · {len(image.data) / 1024:.0f} KB")
-                    if st.button("Remove", key=f"remove_image_{upload_nonce}_{index}", use_container_width=True):
+                    if st.button("Remove", key=f"remove_image_{upload_nonce}_{index}", width="content"):
                         st.session_state.intake_draft_images = [item for position, item in enumerate(normalised) if position != index]
                         st.session_state.intake_upload_nonce = upload_nonce + 1
                         st.rerun()
@@ -385,9 +431,9 @@ def incident_details_page() -> None:
         image_model_error = "Screenshot analysis requires AWS Bedrock with an image-capable Amazon Nova Lite, Pro, or Premier model. Update the configuration or remove the screenshots."
         st.error(image_model_error)
     elif normalised and not config["credentials_available"]:
-        st.info("Bedrock credentials are not detected. You can submit safely, but screenshots will be marked “Not analysed” and the written-details fallback will be used.")
+        st.info("An AWS IAM Identity Center profile is not configured. You can submit safely, but screenshots will be marked “Not analysed” and the written-details fallback will be used.")
     disabled = count < 30 or bool(upload_error) or bool(image_model_error) or (bool(normalised) and not image_consent)
-    if st.button("Analyse incident and build my plan", type="primary", use_container_width=True, disabled=disabled, key="submit_incident"):
+    if st.button("Analyse incident and build my plan", type="primary", width="content", disabled=disabled, key="submit_incident"):
         transfer = {"Yes": "yes", "No": "no", "Not sure": "unknown"}[transfer_label]
         intake = IncidentIntake(
             narrative=narrative.strip(), incident_date_time=incident_date_time.strip(),
@@ -448,7 +494,7 @@ def response_dashboard_page() -> None:
             )
             for column, (kind, title, description, icon) in zip(support_tiles, support_definitions):
                 with column:
-                    if st.button(f"**{title}**\n\n{description}", icon=icon, key=f"support_tile_{kind}_{state.case_revision}", use_container_width=True):
+                    if st.button(f"**{title}**\n\n{description}", icon=icon, key=f"support_tile_{kind}_{state.case_revision}", width="stretch"):
                         support_dialog(kind, state)
     with progress_column:
         with st.container(border=True, height=205, key="progress_board"):
@@ -467,7 +513,7 @@ def response_dashboard_page() -> None:
                 with risk_columns[card_index % 2]:
                     if st.button(
                         f"{label.upper()}\n\n**{risk.title}**\n\nView supporting facts",
-                        icon=icon, key=f"risk_tile_{risk.severity.value}_{state.case_revision}_{risk.id}", use_container_width=True,
+                        icon=icon, key=f"risk_tile_{risk.severity.value}_{state.case_revision}_{risk.id}", width="stretch",
                     ):
                         risk_dialog(state, risk)
                 card_index += 1
@@ -475,7 +521,7 @@ def response_dashboard_page() -> None:
                 with risk_columns[card_index % 2]:
                     if st.button(
                         f"NEEDS CONFIRMATION\n\n**{finding.category.replace('_', ' ').title()}**\n\nClarify this finding",
-                        icon=":material/help:", key=f"risk_tile_possible_{state.case_revision}_{finding.category}", use_container_width=True,
+                        icon=":material/help:", key=f"risk_tile_possible_{state.case_revision}_{finding.category}", width="stretch",
                     ):
                         possible_finding_dialog(finding)
                 card_index += 1
@@ -491,7 +537,7 @@ def response_dashboard_page() -> None:
                     if st.button(
                         f"STEP {index} · {status.upper()}\n\n**{action.title}**\n\n{action.description}",
                         icon=ACTION_ICONS.get(action.tool_name, ":material/task_alt:"),
-                        key=f"step_tile_{key_status}_{state.case_revision}_{action.id}", use_container_width=True,
+                        key=f"step_tile_{key_status}_{state.case_revision}_{action.id}", width="stretch",
                     ):
                         action_dialog(state, action.id)
     st.divider()

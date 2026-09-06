@@ -43,3 +43,29 @@ def test_dashboard_exposes_risk_and_step_tile_controls(monkeypatch) -> None:
     assert not at.exception
     assert any("View supporting facts" in button.label for button in at.button)
     assert any("STEP 1" in button.label for button in at.button)
+
+
+def test_evidence_checklist_unlocks_completion() -> None:
+    at = AppTest.from_string(
+        """
+import streamlit as st
+from src.ui.checklists import render_checklist
+
+ready = render_checklist(
+    ["Save screenshots", "Save call logs", "Keep originals"],
+    "evidence_check_r1_action-create_evidence_summary",
+)
+st.button("Complete", key="complete", disabled=not ready)
+"""
+    ).run()
+
+    checklist = list(at.checkbox)
+    complete_key = "complete"
+    assert len(checklist) == 3
+    assert at.button(key=complete_key).disabled is True
+
+    for item in checklist:
+        at.checkbox(key=item.key).check().run()
+
+    assert at.button(key=complete_key).disabled is False
+    assert not at.exception

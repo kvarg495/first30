@@ -406,7 +406,7 @@ User-selected categories: {selected_exposures}
             source, rationale = "curated_rules_fallback", "The optional model was unavailable; curated incident rules were used."
             message = str(exc).casefold()
             if "expired" in message or "expiredtoken" in message:
-                diagnostic = "AWS session token expired"
+                diagnostic = "AWS IAM Identity Center session expired; run aws sso login for the configured profile"
             elif "accessdenied" in message or "not authorized" in message:
                 diagnostic = "AWS Bedrock access was denied"
             elif "proxy" in message or "127.0.0.1:9" in message:

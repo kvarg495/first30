@@ -67,11 +67,13 @@ first30/
 
 1. Create and activate a virtual environment: `python3.13 -m venv .venv && source .venv/bin/activate`.
 2. Install dependencies with `python -m pip install -r requirements.txt`.
-3. Copy `.env.example` to `.env`. Add the three temporary AWS credentials from the hackathon access portal, or a Groq key, to enable optional LLM classification and planning.
-4. Run `python -m streamlit run app.py`.
-5. Run tests with `python -m pytest -q`.
+3. [Configure an AWS IAM Identity Center profile](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html) with `aws configure sso --profile first30-bedrock`. Choose an account and permission set with access to the configured Amazon Bedrock model.
+4. Sign in and cache the session with `aws sso login --profile first30-bedrock`.
+5. Copy `.env.example` to `.env`. Set `AWS_PROFILE` to the profile name from step 3. Do not add `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, or `AWS_SESSION_TOKEN`; environment credentials take precedence over the Identity Center provider.
+6. Run `python -m streamlit run app.py`.
+7. Run tests with `python -m pytest -q`.
 
-The application works deterministically without sending incident details to an LLM. When Bedrock credentials are configured, Amazon Nova Lite can assess the structured intake and consented screenshots in one bounded multimodal request. Explicit user-entered facts take precedence over model or image inference. Invalid output or model failure falls back to deterministic rules and marks screenshots as not analysed.
+The application works deterministically without sending incident details to an LLM. When the Bedrock Identity Center profile is signed in, Amazon Nova Lite can assess the structured intake and consented screenshots in one bounded multimodal request. The AWS SDK retrieves and refreshes the role credentials from the cached Identity Center session; rerun `aws sso login --profile first30-bedrock` when the portal session itself expires. Explicit user-entered facts take precedence over model or image inference. Invalid output or model failure falls back to deterministic rules and marks screenshots as not analysed.
 
 ## Agent loop
 
@@ -120,4 +122,4 @@ The graph should identify critical financial exposure, let the user prepare a ba
 - Optional fallback LLM: Groq / GPT-OSS 120B
 - Tools: mocked Python functions
 - Knowledge: curated Singapore scam-response guidance
-- Secrets: local `.env`, excluded from Git
+- AWS authentication: IAM Identity Center profile, with the local `.env` containing only the non-secret profile name and model configuration

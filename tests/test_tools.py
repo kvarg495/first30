@@ -49,6 +49,11 @@ def test_police_report_is_a_draft_with_official_handoff() -> None:
     assert result.metadata["report_type"] == "Scam"
     assert "field_what_happened" in result.metadata
     assert "field_attachments" in result.metadata
+    assert result.metadata["attachment_checklist"] == [
+        "Screenshots of scam messages, chats, or webpages",
+        "Call logs and the scammer's contact details",
+        "Transaction alerts, receipts, or bank references, if relevant",
+    ]
 
 
 def test_contact_notification_is_never_sent() -> None:

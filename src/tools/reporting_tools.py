@@ -8,7 +8,14 @@ def prepare_police_report(state: IncidentState) -> ToolResult:
     intake = state.intake
     report_type = "Unauthorised card transaction" if facts.bank_or_card_details_exposed else "Scam"
     identifiers = ", ".join([*facts.suspect_identifiers, *facts.suspicious_urls]) or "Not recorded in the initial account"
-    attachments = ", ".join(item.replace("_", " ") for item in facts.evidence_available) or "Add locally saved screenshots, call logs, and messages"
+    attachment_checklist = [
+        item.replace("_", " ").capitalize() for item in facts.evidence_available
+    ] or [
+        "Screenshots of scam messages, chats, or webpages",
+        "Call logs and the scammer's contact details",
+        "Transaction alerts, receipts, or bank references, if relevant",
+    ]
+    attachments = ", ".join(attachment_checklist)
     money = "No transfer reported" if facts.money_transferred == "no" else "A transfer may have occurred; confirm amount, time, and reference number" if facts.money_transferred == "yes" else "Not recorded"
     narrative = intake.narrative if intake else state.description
     when_where = (
@@ -45,6 +52,7 @@ def prepare_police_report(state: IncidentState) -> ToolResult:
             "submission": "not-submitted",
             "official_report_url": OFFICIAL_HANDOFFS["police_report"],
             "report_type": report_type,
+            "attachment_checklist": attachment_checklist,
             **fields,
             "field_suspect_details": identifiers,
         },

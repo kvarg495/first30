@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 def get_chat_model():
     """Return the configured optional LLM without loading credentials at import time."""
     load_dotenv()
-    provider = os.getenv("LLM_PROVIDER", "groq").casefold()
+    provider = os.getenv("LLM_PROVIDER", "bedrock").casefold()
 
     if provider == "groq":
         from langchain_groq import ChatGroq
@@ -22,9 +22,13 @@ def get_chat_model():
     if provider == "bedrock":
         from langchain_aws import ChatBedrockConverse
 
+        profile = os.getenv("AWS_PROFILE", "").strip()
+        if not profile:
+            raise ValueError("AWS_PROFILE must name an IAM Identity Center profile")
         return ChatBedrockConverse(
             model=os.getenv("BEDROCK_MODEL_ID", "amazon.nova-lite-v1:0"),
             region_name=os.getenv("AWS_REGION", "us-east-1"),
+            credentials_profile_name=profile,
             temperature=0,
         )
 
@@ -34,7 +38,7 @@ def get_chat_model():
 def get_analysis_configuration() -> dict[str, str | bool]:
     """Return non-secret provider diagnostics suitable for the developer dialog."""
     load_dotenv()
-    provider = os.getenv("LLM_PROVIDER", "groq").casefold()
+    provider = os.getenv("LLM_PROVIDER", "bedrock").casefold()
     model = (
         os.getenv("BEDROCK_MODEL_ID", "amazon.nova-lite-v1:0")
         if provider == "bedrock"
@@ -43,16 +47,14 @@ def get_analysis_configuration() -> dict[str, str | bool]:
     image_capable = provider == "bedrock" and any(
         family in model.casefold() for family in ("nova-lite", "nova-pro", "nova-premier")
     )
-    credentials_available = bool(
-        os.getenv("AWS_PROFILE")
-        or os.getenv("AWS_ACCESS_KEY_ID")
-        or os.getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI")
-    ) if provider == "bedrock" else bool(os.getenv("GROQ_API_KEY"))
+    aws_profile = os.getenv("AWS_PROFILE", "").strip()
+    credentials_available = bool(aws_profile) if provider == "bedrock" else bool(os.getenv("GROQ_API_KEY"))
     return {
         "provider": provider,
         "model": model,
         "image_capable": image_capable,
         "credentials_available": credentials_available,
+        "aws_profile": aws_profile,
     }
 
 
@@ -64,16 +66,12 @@ def get_optional_chat_model() -> Any | None:
     are installed.
     """
     load_dotenv()
-    provider = os.getenv("LLM_PROVIDER", "groq").casefold()
+    provider = os.getenv("LLM_PROVIDER", "bedrock").casefold()
 
     if provider == "groq" and not os.getenv("GROQ_API_KEY"):
         return None
 
-    if provider == "bedrock" and not (
-        os.getenv("AWS_PROFILE")
-        or os.getenv("AWS_ACCESS_KEY_ID")
-        or os.getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI")
-    ):
+    if provider == "bedrock" and not os.getenv("AWS_PROFILE", "").strip():
         return None
 
     return get_chat_model()
