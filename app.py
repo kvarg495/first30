@@ -362,15 +362,15 @@ def incident_details_page() -> None:
     render_header_badge()
     st.markdown('<div class="f30-eyebrow">Incident intake</div>', unsafe_allow_html=True)
     st.title("Tell us what happened")
-    st.markdown('<div class="f30-lead">Share what you know. Only the incident description is required; every other field can be left blank.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="f30-lead">Start with the required incident description. Every other detail is optional and can help tailor your plan.</div>', unsafe_allow_html=True)
     st.warning("Do not type passwords, OTP values, PINs, recovery codes, or full card numbers.")
     with st.container(border=True):
-        section_intro("What happened", "Describe the sequence in your own words. Use at least 30 non-whitespace characters.")
-        narrative = st.text_area("Incident description", key="intake_narrative", height=180, placeholder="For example: A caller claimed to be from the police and asked me to verify my Singpass account...")
+        section_intro("What happened", "Required. Describe the sequence in your own words using at least 30 non-whitespace characters.")
+        narrative = st.text_area("Incident description *", key="intake_narrative", height=180, placeholder="For example: A caller claimed to be from the police and asked me to verify my Singpass account...")
         count = len("".join(narrative.split()))
-        st.caption(f"{count} / 30 minimum characters")
+        st.caption(f"{count} / 30 minimum characters · * Required")
     with st.container(border=True):
-        section_intro("Incident context", "Optional details help tailor the plan and pre-fill reporting guidance.")
+        section_intro("Incident context (optional)", "Add only what you know. These details help tailor the plan and pre-fill reporting guidance.")
         first, second = st.columns(2)
         with first:
             incident_date_time = st.text_input("Approximate date and time", key="intake_date_time", placeholder="e.g. 6 Sep 2026, around 2:30 pm")
@@ -385,10 +385,10 @@ def incident_details_page() -> None:
             discovery = st.text_area("How did you discover it?", key="intake_discovery", height=92)
             actions_taken = st.text_area("Actions already taken", key="intake_actions", height=92, placeholder="e.g. ended the call and changed my password")
     with st.container(border=True):
-        section_intro("Information exposed", "Select every category that might be involved. Choose “Not sure” if unclear.")
+        section_intro("Information exposed (optional)", "Select every category that might be involved. Choose “Not sure” if unclear.")
         exposure_labels = st.pills("Exposure categories", list(EXPOSURE_OPTIONS), selection_mode="multi", key="intake_exposures", label_visibility="collapsed") or []
     with st.container(border=True):
-        section_intro("Evidence screenshots", "Optional. Add up to five PNG, JPG, or WebP images; 5 MB each and 20 MB total.")
+        section_intro("Evidence screenshots (optional)", "Add up to five PNG, JPG, or WebP images; 5 MB each and 20 MB total.")
         upload_nonce = int(st.session_state.get("intake_upload_nonce", 0))
         uploads = st.file_uploader("Upload screenshots", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key=f"intake_uploads_{upload_nonce}", label_visibility="collapsed")
         persisted_images: list[NormalizedImage] = st.session_state.get("intake_draft_images", [])

@@ -15,7 +15,7 @@ def app(monkeypatch) -> AppTest:
 def test_intake_validates_narrative(monkeypatch) -> None:
     at = app(monkeypatch)
     assert not at.exception
-    assert at.text_area[0].label == "Incident description"
+    assert at.text_area[0].label == "Incident description *"
     assert at.button(key="submit_incident").disabled is True
     at.text_area[0].set_value(NARRATIVE).run()
     assert at.button(key="submit_incident").disabled is False
