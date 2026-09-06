@@ -71,7 +71,7 @@ first30/
 4. Run `python -m streamlit run app.py`.
 5. Run tests with `python -m pytest -q`.
 
-The application works deterministically without sending incident details to an LLM. When Groq or Bedrock credentials are explicitly configured, the assessor uses structured output to classify the narrative and the planner orders only the tools allowed by the curated response guide. Invalid output or model failure falls back to deterministic rules.
+The application works deterministically without sending incident details to an LLM. When Bedrock credentials are configured, Amazon Nova Lite can assess the structured intake and consented screenshots in one bounded multimodal request. Explicit user-entered facts take precedence over model or image inference. Invalid output or model failure falls back to deterministic rules and marks screenshots as not analysed.
 
 ## Agent loop
 
@@ -87,7 +87,9 @@ assess -> plan -> select -> execute -> observe/review
 
 ## Case preparation
 
-The UI keeps ScamShield guidance visible, gives one concise reason for the current priority, and advances through an existing case without repeatedly reassessing it. Evidence preparation is preservation guidance only: First30 does not collect or upload screenshots. Police-report preparation shows copyable SPF-style field suggestions drawn from the original incident facts. Trusted-contact drafts are channel-appropriate and editable. The prototype links to official services but does not sign in, upload evidence, submit reports, or send messages.
+The two-page UI keeps an editable Incident Details intake separate from a tile-based Response Dashboard. ScamShield guidance remains visible, each risk and recovery step opens in a dialog, and human-confirmed completion drives the segmented progress display. Evidence preparation is preservation guidance only. Police-report preparation shows copyable SPF-style field suggestions, and trusted-contact drafts are channel-appropriate and editable. The prototype links to official services but does not sign in, upload evidence to official services, submit reports, or send messages.
+
+Uploaded screenshots are validated and re-encoded in memory with Pillow, which strips metadata and limits image size. Bytes remain only in Streamlit session memory and are transmitted to Bedrock only after explicit acknowledgement; they are never stored in `IncidentState`, on disk, in logs, or in Git.
 
 The LLM is deliberately bounded: it can classify into known exposure categories and order an incident-specific allow-list, but curated code owns severity, official guidance, available tools, confirmation requirements, and the rule that containment precedes documentation.
 
@@ -114,7 +116,7 @@ The graph should identify critical financial exposure, let the user prepare a ba
 - Backend: Python
 - Orchestration: LangGraph
 - State and schemas: Pydantic
-- Hackathon LLM: AWS Bedrock / Amazon Nova Micro
+- Hackathon LLM: AWS Bedrock / Amazon Nova Lite (text and image input)
 - Optional fallback LLM: Groq / GPT-OSS 120B
 - Tools: mocked Python functions
 - Knowledge: curated Singapore scam-response guidance

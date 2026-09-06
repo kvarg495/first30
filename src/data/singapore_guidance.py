@@ -47,7 +47,11 @@ SCAM_RESPONSE_GUIDE = {
 # not sign in, submit forms, call hotlines, or transmit any incident information.
 OFFICIAL_HANDOFFS = {
     "scamshield_victim_guidance": "https://www.scamshield.gov.sg/i-have-been-scammed/",
+    "scamshield_check": "https://guide.scamshield.gov.sg/using-scamshield/check-for-scams",
+    "scamshield_report": "https://guide.scamshield.gov.sg/using-scamshield/submit-a-scam-report",
+    "bank_hotlines": "https://www.scamshield.gov.sg/bank-s-anti-scam-hotline/",
     "police_report": "https://www.police.gov.sg/e-services/lodge-police-report/",
+    "police_contact": "https://www.police.gov.sg/contact-us",
     "singpass_contact": "https://portal.singpass.gov.sg/home/ui/contact-us",
 }
 

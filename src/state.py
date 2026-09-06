@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -21,6 +21,23 @@ class Risk(BaseModel):
     source_exposure: str
 
 
+class EvidenceRef(BaseModel):
+    """A user-visible fact that supports or contradicts an exposure finding."""
+
+    source: Literal["user_tag", "narrative", "structured_field", "image"]
+    field: str
+    excerpt: str
+
+
+class ExposureFinding(BaseModel):
+    """A bounded finding; only confirmed findings may create required actions."""
+
+    category: str
+    status: Literal["confirmed", "possible", "ruled_out"]
+    evidence: list[EvidenceRef] = Field(default_factory=list)
+    conflict_notes: list[str] = Field(default_factory=list)
+
+
 class RecoveryAction(BaseModel):
     id: str
     title: str
@@ -36,7 +53,58 @@ class ToolResult(BaseModel):
     action: str
     message: str
     requires_confirmation: bool = False
-    metadata: dict[str, str] = Field(default_factory=dict)
+    artifact: "GuidanceArtifact | None" = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class OfficialRoute(BaseModel):
+    label: str
+    url: str = ""
+    phone: str = ""
+    note: str = ""
+
+
+class CopyBlock(BaseModel):
+    id: str
+    title: str
+    text: str
+
+
+class GuidanceArtifact(BaseModel):
+    summary: str
+    instructions: list[str] = Field(default_factory=list)
+    official_routes: list[OfficialRoute] = Field(default_factory=list)
+    copy_blocks: list[CopyBlock] = Field(default_factory=list)
+    report_fields: dict[str, str] = Field(default_factory=dict)
+
+
+class ImageMetadata(BaseModel):
+    """Non-sensitive upload metadata retained with a case revision."""
+
+    name: str
+    media_type: Literal["image/png", "image/jpeg", "image/webp"]
+    size_bytes: int
+    width: int
+    height: int
+    analysis_status: Literal["analysed", "not_analysed"] = "not_analysed"
+
+
+class IncidentIntake(BaseModel):
+    """Structured, optional context supplied explicitly by the user."""
+
+    narrative: str = Field(min_length=1)
+    incident_date_time: str = ""
+    scam_channels: list[str] = Field(default_factory=list)
+    impersonated_organisation: str = ""
+    suspicious_contact: str = ""
+    suspicious_url: str = ""
+    bank_or_provider: str = ""
+    money_transfer_status: Literal["yes", "no", "unknown"] = "unknown"
+    amount: str = ""
+    discovery_method: str = ""
+    actions_already_taken: str = ""
+    exposure_tags: list[str] = Field(default_factory=list)
+    image_metadata: list[ImageMetadata] = Field(default_factory=list)
 
 
 class IncidentFacts(BaseModel):
@@ -53,10 +121,25 @@ class IncidentFacts(BaseModel):
     suspect_identifiers: list[str] = Field(default_factory=list)
     suspicious_urls: list[str] = Field(default_factory=list)
     evidence_available: list[str] = Field(default_factory=list)
+    image_observations: list[str] = Field(default_factory=list)
+    risk_evidence: dict[str, list[str]] = Field(default_factory=dict)
+    uncertainties: list[str] = Field(default_factory=list)
+    needs_review: list[str] = Field(default_factory=list)
+    exposure_findings: list[ExposureFinding] = Field(default_factory=list)
+    accepted_model_findings: int = 0
+    rejected_model_findings: int = 0
+    conflicted_findings: int = 0
+    rules_only_findings: int = 0
+    model_diagnostic: str = ""
 
 
 class IncidentState(BaseModel):
     description: str
+    intake: IncidentIntake | None = None
+    case_revision: int = 0
+    image_metadata: list[ImageMetadata] = Field(default_factory=list)
+    images_analyzed: bool = False
+    analysis_warning: str | None = None
     incident_updates: list[str] = Field(default_factory=list)
     selected_exposures: list[str] = Field(default_factory=list)
     facts: IncidentFacts = Field(default_factory=IncidentFacts)

@@ -7,23 +7,40 @@ from langgraph.graph import END, START, StateGraph
 from src.agents.assessor import assess_incident_with_model
 from src.agents.planner import create_plan_with_model
 from src.agents.reviewer import next_pending_action, review_incident
-from src.state import IncidentState
+from src.state import IncidentIntake, IncidentState
 from src.tools.registry import TOOL_REGISTRY
+from src.utils.images import NormalizedImage
 from src.utils.llm import get_optional_chat_model
 
 
-def assess_node(state: IncidentState, model: Any | None = None) -> dict:
+def assess_node(
+    state: IncidentState,
+    model: Any | None = None,
+    images: list[NormalizedImage] | None = None,
+) -> dict:
     narrative = "\n".join([state.description, *state.incident_updates])
     exposures, risks, source, rationale, facts = assess_incident_with_model(
         narrative,
         state.selected_exposures,
         model,
+        state.intake,
+        images,
     )
+    analysed = bool(images) and source == "curated_rules_plus_llm"
+    metadata = [item.model_copy(update={"analysis_status": "analysed" if analysed else "not_analysed"}) for item in state.image_metadata]
+    warning = None
+    if source == "curated_rules_fallback":
+        warning = "AI analysis was unavailable, so this case used checked local rules. Open Developer details for configuration diagnostics."
+    if images and not analysed:
+        warning = "Screenshot analysis was unavailable. The plan uses your written details and safety rules; screenshots were not analysed."
     return {
         "compromised_assets": exposures,
         "facts": facts,
         "risks": risks,
         "assessment_source": source,
+        "images_analyzed": analysed,
+        "image_metadata": metadata,
+        "analysis_warning": warning,
         "status": "planning",
         "activity_log": [
             *state.activity_log,
@@ -58,7 +75,8 @@ def plan_node(state: IncidentState, model: Any | None = None) -> dict:
 def select_action_node(state: IncidentState) -> dict:
     action = next_pending_action(state)
     if action is None:
-        return {"current_action_id": None, "status": "completed"}
+        status = "completed" if len(state.completed_action_ids) == len(state.actions) else "needs_attention"
+        return {"current_action_id": None, "status": status}
     if state.loop_count >= state.max_steps:
         return {
             "current_action_id": None,
@@ -120,10 +138,12 @@ def route_after_review(state: IncidentState) -> str:
     return "end" if state.status in {"completed", "stopped_safely"} else "plan"
 
 
-def build_graph(model: Any | None = None):
+def build_graph(model: Any | None = None, images: list[NormalizedImage] | None = None):
     builder = StateGraph(IncidentState)
-    builder.add_node("assess", lambda state: assess_node(state, model))
-    builder.add_node("plan", lambda state: plan_node(state, model))
+    builder.add_node("assess", lambda state: assess_node(state, model, images))
+    # The model produces one bounded assessment per submission. Tool selection
+    # and ordering remain deterministic and curated.
+    builder.add_node("plan", lambda state: plan_node(state, None))
     builder.add_node("select_action", select_action_node)
     builder.add_node("execute", execute_tool_node)
     builder.add_node("review", review_node)
@@ -148,15 +168,28 @@ def run_incident(
     approved_action_ids: list[str] | None = None,
     completed_action_ids: list[str] | None = None,
     use_llm: bool | None = None,
+    intake: IncidentIntake | None = None,
+    images: list[NormalizedImage] | None = None,
+    case_revision: int = 0,
 ) -> IncidentState:
+    intake = intake or IncidentIntake(
+        narrative=description,
+        exposure_tags=selected_exposures or [],
+    )
+    metadata = [image.metadata() for image in images or []]
+    intake = intake.model_copy(update={"image_metadata": metadata})
     initial = IncidentState(
         description=description,
+        intake=intake,
+        case_revision=case_revision,
+        image_metadata=metadata,
+        selected_bank=intake.bank_or_provider,
         selected_exposures=selected_exposures or [],
         approved_action_ids=approved_action_ids or [],
         completed_action_ids=completed_action_ids or [],
     )
     model = get_optional_chat_model() if use_llm is not False else None
-    graph = build_graph(model) if model is not None else GRAPH
+    graph = build_graph(model, images) if model is not None or images else GRAPH
     return IncidentState.model_validate(graph.invoke(initial))
 
 
@@ -232,8 +265,22 @@ def advance_incident(
     next_action = next_pending_action(initial)
     if next_action is None:
         initial.current_action_id = None
-        initial.status = "completed"
+        initial.status = "completed" if len(initial.completed_action_ids) == len(initial.actions) else "needs_attention"
     else:
         initial.current_action_id = next_action.id
         initial.status = "awaiting_preparation"
+    return initial
+
+
+def reopen_action(state: IncidentState, action_id: str) -> IncidentState:
+    """Reopen a skipped action without reassessing or regenerating its case."""
+    initial = state.model_copy(deep=True)
+    initial.skipped_action_ids = [item for item in initial.skipped_action_ids if item != action_id]
+    initial.completed_action_ids = [item for item in initial.completed_action_ids if item != action_id]
+    for action in initial.actions:
+        if action.id == action_id:
+            action.status = "prepared" if action_id in initial.prepared_action_ids else "pending"
+            initial.current_action_id = action_id
+            initial.status = "awaiting_user_confirmation" if action.status == "prepared" else "awaiting_preparation"
+            break
     return initial
