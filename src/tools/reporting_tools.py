@@ -1,5 +1,5 @@
 from src.data.singapore_guidance import OFFICIAL_HANDOFFS
-from src.state import IncidentState, ToolResult
+from src.state import GuidanceArtifact, IncidentState, OfficialRoute, ToolResult
 
 
 def prepare_police_report(state: IncidentState) -> ToolResult:
@@ -20,23 +20,32 @@ def prepare_police_report(state: IncidentState) -> ToolResult:
     discovery = intake.discovery_method if intake and intake.discovery_method else "Not recorded — add how you discovered the scam or why you stopped."
     if intake and intake.amount:
         money = f"Transfer status: {facts.money_transferred}. Amount entered by user: {intake.amount}. Confirm transaction references in the official form."
+    fields = {
+        "field_when_where": when_where,
+        "field_what_happened": narrative,
+        "field_discovery": discovery,
+        "field_money_transactions": money,
+        "field_items_involved": "Potentially exposed: " + ", ".join(filter(None, ["Singpass-related access" if facts.singpass_access_exposed else "", "OTP" if facts.otp_context != "not_disclosed" else "", *facts.personal_data_types])),
+        "field_victims": "Your details will be collected by the official SPF form. If reporting for someone else, answer on their behalf and identify that person.",
+        "field_suspects": identifiers,
+        "field_attachments": attachments,
+    }
     return ToolResult(
         success=True,
         action="prepare_police_report",
         message="SPF-style report suggestions prepared for review; no police report was submitted.",
+        artifact=GuidanceArtifact(
+            summary=f"Review the suggested entries for the SPF {report_type} flow, then submit through the official service yourself.",
+            instructions=["Check every field against your records.", "Replace 'Not recorded' where you have reliable information.", "Attach preserved original evidence files in the official form."],
+            official_routes=[OfficialRoute(label="Lodge a police report", url=OFFICIAL_HANDOFFS["police_report"], note="Use 999 only if immediate police assistance is required.")],
+            report_fields=fields,
+        ),
         metadata={
             "mode": "mock",
             "submission": "not-submitted",
             "official_report_url": OFFICIAL_HANDOFFS["police_report"],
             "report_type": report_type,
-            "field_when_where": when_where,
-            "field_what_happened": narrative,
-            "field_discovery": discovery,
-            "field_money_transactions": money,
-            "field_items_involved": "Potentially exposed: " + ", ".join(filter(None, ["Singpass-related access" if facts.singpass_access_exposed else "", "OTP" if facts.otp_context != "not_disclosed" else "", *facts.personal_data_types])),
+            **fields,
             "field_suspect_details": identifiers,
-            "field_attachments": attachments,
-            "field_victims": "Your details will be collected by the official SPF form. If reporting for someone else, answer on their behalf and identify that person.",
-            "field_suspects": identifiers,
         },
     )

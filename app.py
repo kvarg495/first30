@@ -6,7 +6,8 @@ from pathlib import Path
 import streamlit as st
 
 from src.graph import advance_incident, prepare_current_action, reopen_action, run_incident
-from src.state import IncidentIntake, IncidentState, RecoveryAction, Risk, Severity, ToolResult
+from src.data.singapore_guidance import OFFICIAL_HANDOFFS
+from src.state import ExposureFinding, IncidentIntake, IncidentState, RecoveryAction, Risk, Severity, ToolResult
 from src.utils.images import ImageValidationError, NormalizedImage, normalize_uploads
 from src.utils.llm import get_analysis_configuration
 
@@ -21,13 +22,14 @@ CHANNEL_OPTIONS = {
     "Website": "website", "Email": "email", "Social media": "social_media", "Other": "other",
 }
 SEVERITY_LABELS = {
-    Severity.critical: ("Critical", "🔴"), Severity.high: ("High", "🟠"),
-    Severity.medium: ("Medium", "🔵"), Severity.low: ("Low", "⚪"),
+    Severity.critical: ("Critical", ":material/error:"), Severity.high: ("High", ":material/warning:"),
+    Severity.medium: ("Medium", ":material/info:"), Severity.low: ("Low", ":material/check_circle:"),
 }
 STATUS_LABELS = {"pending": "Pending", "prepared": "Guidance ready", "skipped": "Skipped", "completed": "Completed"}
 ACTION_ICONS = {
-    "prepare_bank_freeze": "💳", "prepare_singpass_security": "🪪", "prepare_email_security": "✉️",
-    "create_evidence_summary": "📸", "prepare_police_report": "📄", "draft_contact_notification": "📣",
+    "prepare_bank_freeze": ":material/credit_card:", "prepare_singpass_security": ":material/badge:",
+    "prepare_email_security": ":material/mark_email_unread:", "create_evidence_summary": ":material/photo_library:",
+    "prepare_police_report": ":material/description:", "draft_contact_notification": ":material/campaign:",
 }
 INTAKE_WIDGET_KEYS = (
     "intake_narrative", "intake_date_time", "intake_channels", "intake_impersonated", "intake_contact",
@@ -41,7 +43,7 @@ def load_styles() -> None:
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 
-def render_brandbar() -> None:
+def render_header_badge() -> None:
     state: IncidentState | None = st.session_state.get("incident")
     if not state:
         badge = "No active case"
@@ -51,10 +53,7 @@ def render_brandbar() -> None:
         badge = f"Case {state.case_revision} · Review needed"
     else:
         badge = f"Case {state.case_revision} · In progress"
-    st.markdown(
-        f'<div class="f30-brandbar"><div class="f30-brand"><span class="f30-mark">30</span> First30</div>'
-        f'<div class="f30-case-badge">{html.escape(badge)}</div></div>', unsafe_allow_html=True,
-    )
+    st.markdown(f'<div class="f30-case-badge">{html.escape(badge)}</div>', unsafe_allow_html=True)
 
 
 def section_intro(title: str, description: str) -> None:
@@ -93,17 +92,15 @@ def result_for_action(state: IncidentState, action: RecoveryAction) -> ToolResul
 
 
 def copyable_text(label: str, value: str, key: str, height: int = 150) -> None:
-    safe_id = "copy_" + "".join(character if character.isalnum() else "_" for character in key)
-    safe_class = f"copy_card_{safe_id}"
-    st.html(
-        f"""<style>.{safe_class}{{margin:.25rem 0 1rem;font-family:system-ui,-apple-system,sans-serif;color:#17324d}}.{safe_class} .label{{font-size:14px;font-weight:650;margin-bottom:7px}}.{safe_class} textarea{{box-sizing:border-box;width:100%;height:{height}px;resize:vertical;padding:12px;border:1px solid #cbd8e2;border-radius:10px;background:#fff;color:#17324d;font:14px/1.45 system-ui,-apple-system,sans-serif}}.{safe_class} textarea:focus{{outline:3px solid #9bc8e4;border-color:#1769aa}}.{safe_class} button{{margin-top:7px;border:1px solid #b8c9d6;border-radius:8px;background:#fff;color:#17324d;padding:7px 12px;font-weight:650;cursor:pointer}}</style>
-        <div class="{safe_class}"><div class="label">{html.escape(label)}</div><textarea id="{safe_id}">{html.escape(value)}</textarea>
-        <button onclick="navigator.clipboard.writeText(document.getElementById('{safe_id}').value);this.textContent='Copied'">Copy text</button></div>""",
-        unsafe_allow_javascript=True,
-    )
+    edit_key = f"editable_{key}"
+    edited = st.text_area(label, value=value, key=edit_key, height=height)
+    st.caption("Use the copy icon in the top-right of the panel below to copy the current text.")
+    st.code(edited, language=None, wrap_lines=True, height=min(height, 180))
 
 
-def report_fields(metadata: dict[str, str], revision: int) -> None:
+def report_fields(result: ToolResult, revision: int) -> None:
+    metadata = result.metadata
+    fields = result.artifact.report_fields if result.artifact else metadata
     st.markdown(f"**Suggested entries for the SPF {metadata.get('report_type', 'scam')} form**")
     st.caption("Review these against your records. Missing details are labelled instead of invented.")
     labels = {
@@ -113,12 +110,37 @@ def report_fields(metadata: dict[str, str], revision: int) -> None:
         "field_suspects": "Suspects involved", "field_attachments": "Attachments to prepare",
     }
     for field, label in labels.items():
-        copyable_text(label, metadata.get(field, "Not recorded"), f"r{revision}_{field}", 100 if field == "field_what_happened" else 74)
+        copyable_text(label, fields.get(field, "Not recorded"), f"r{revision}_{field}", 100 if field == "field_what_happened" else 74)
+    compiled = "\n\n".join(
+        f"{label}\n{st.session_state.get(f'editable_r{revision}_{field}', fields.get(field, 'Not recorded'))}"
+        for field, label in labels.items()
+    )
+    st.markdown("**Copy the complete report draft**")
+    st.code(compiled, language=None, wrap_lines=True, height=240)
 
 
 def render_artifact(state: IncidentState, action: RecoveryAction, result: ToolResult) -> None:
     metadata = result.metadata
     st.success("Guidance prepared locally. Nothing has been submitted, sent, or changed in an external account.")
+    if result.artifact:
+        artifact = result.artifact
+        st.write(artifact.summary)
+        if artifact.instructions:
+            st.markdown("**What to do**")
+            for index, instruction in enumerate(artifact.instructions, start=1):
+                st.write(f"{index}. {instruction}")
+        for route in artifact.official_routes:
+            if route.phone:
+                st.info(route.phone)
+            if route.note:
+                st.caption(route.note)
+            if route.url:
+                st.link_button(route.label, route.url, icon=":material/open_in_new:", use_container_width=True)
+        if artifact.report_fields:
+            report_fields(result, state.case_revision)
+        for block in artifact.copy_blocks:
+            copyable_text(block.title, block.text, f"r{state.case_revision}_{action.id}_{block.id}", 175)
+        return
     official_url = metadata.get("official_guidance_url") or metadata.get("official_contact_url") or metadata.get("official_report_url")
     if metadata.get("contact_route"):
         st.info(metadata["contact_route"])
@@ -138,12 +160,15 @@ def render_artifact(state: IncidentState, action: RecoveryAction, result: ToolRe
             st.markdown(f"- {step}")
         st.caption(f"Already mentioned: {metadata.get('evidence_available', 'None identified yet')}.")
     if action.tool_name == "prepare_police_report":
-        report_fields(metadata, state.case_revision)
+        report_fields(result, state.case_revision)
     if metadata.get("content"):
         copyable_text("Editable message draft", metadata["content"], f"r{state.case_revision}_{action.id}_message", 175)
 
 
 def risk_evidence(state: IncidentState, risk: Risk) -> list[str]:
+    finding = next((item for item in state.facts.exposure_findings if item.category == risk.source_exposure), None)
+    if finding and finding.evidence:
+        return [item.excerpt for item in finding.evidence]
     evidence: list[str] = []
     label = next((label for label, value in EXPOSURE_OPTIONS.items() if value == risk.source_exposure), risk.source_exposure)
     if risk.source_exposure in state.selected_exposures:
@@ -157,10 +182,11 @@ def risk_evidence(state: IncidentState, risk: Risk) -> list[str]:
     return evidence or ["The category was identified from the incident narrative."]
 
 
-@st.dialog("Risk details", width="large")
+@st.dialog("Risk details", width="large", icon=":material/shield:")
 def risk_dialog(state: IncidentState, risk: Risk) -> None:
-    label, icon = SEVERITY_LABELS[risk.severity]
-    st.markdown(f"## {icon} {risk.title}")
+    label, _ = SEVERITY_LABELS[risk.severity]
+    finding = next((item for item in state.facts.exposure_findings if item.category == risk.source_exposure), None)
+    st.markdown(f"## {risk.title}")
     st.markdown(f"**Severity: {label}**")
     st.write(risk.rationale)
     st.markdown("**Why this risk was identified**")
@@ -169,7 +195,7 @@ def risk_dialog(state: IncidentState, risk: Risk) -> None:
     st.markdown("**Affected information**")
     st.write(risk.source_exposure.replace("_", " ").title())
     st.markdown("**Uncertainty**")
-    uncertainty = list(dict.fromkeys([*state.facts.needs_review, *state.facts.uncertainties]))
+    uncertainty = list(dict.fromkeys([*state.facts.needs_review, *state.facts.uncertainties, *(finding.conflict_notes if finding else [])]))
     if uncertainty:
         for item in uncertainty:
             st.warning(item)
@@ -177,18 +203,47 @@ def risk_dialog(state: IncidentState, risk: Risk) -> None:
         st.caption("No specific conflict was identified. Confirm the assessment against your own records.")
 
 
-@st.dialog("ScamShield guidance", width="large")
-def scamshield_dialog() -> None:
-    st.markdown("## Official ScamShield support")
-    st.write("Use ScamShield to check suspicious messages and get guidance. If money or account access is at risk, also use the relevant bank, Singpass, email-provider, and police routes in your plan.")
-    st.info("Call 1799 if you are unsure whether something is a scam or need scam-related guidance.")
-    st.link_button("Open ScamShield: I have been scammed", "https://www.scamshield.gov.sg/i-have-been-scammed/", use_container_width=True)
+@st.dialog("Finding needs confirmation", width="large", icon=":material/help:")
+def possible_finding_dialog(finding: ExposureFinding) -> None:
+    st.markdown(f"## {finding.category.replace('_', ' ').title()}")
+    st.warning("This was not confirmed and did not create a required recovery step.")
+    for item in finding.evidence:
+        st.write(f"Source: {item.field} — {item.excerpt}")
+    for note in finding.conflict_notes:
+        st.info(note)
+    st.caption("Return to Incident Details and clarify what was or was not shared, then resubmit the case.")
 
 
-@st.dialog("Recovery step", width="large")
+@st.dialog("Official support", width="large", icon=":material/support_agent:")
+def support_dialog(kind: str, state: IncidentState) -> None:
+    if kind == "check":
+        st.markdown("## Check the suspicious contact and link")
+        st.write("Open ScamShield's Check for Scams feature and check each item separately.")
+        if state.facts.suspect_identifiers:
+            st.info("Phone or contact to check: " + ", ".join(state.facts.suspect_identifiers))
+        if state.facts.suspicious_urls:
+            st.info("Website link to check: " + ", ".join(state.facts.suspicious_urls))
+        if not state.facts.suspect_identifiers and not state.facts.suspicious_urls:
+            st.caption("No phone number or URL was supplied. You can still paste the suspicious message into ScamShield.")
+        st.link_button("Open ScamShield checking guide", OFFICIAL_HANDOFFS["scamshield_check"], icon=":material/open_in_new:", use_container_width=True)
+    elif kind == "report":
+        st.markdown("## Report the scam in the ScamShield app")
+        st.write("Use the app to report the suspicious call, message, or website so it can be reviewed for blocking and detection.")
+        st.warning("A ScamShield report is not an official police report. If you were scammed or lost money, also lodge an SPF report.")
+        st.link_button("Open ScamShield reporting guide", OFFICIAL_HANDOFFS["scamshield_report"], icon=":material/open_in_new:", use_container_width=True)
+    else:
+        st.markdown("## Police help and reporting")
+        st.error("For immediate police assistance, call 999. If it is unsafe to speak, SMS 70999.")
+        st.info("To provide non-emergency crime-related information, call the Police Hotline at 1800 255 0000.")
+        st.link_button("Lodge a non-urgent police report", OFFICIAL_HANDOFFS["police_report"], icon=":material/open_in_new:", use_container_width=True)
+        st.link_button("View official SPF contacts", OFFICIAL_HANDOFFS["police_contact"], icon=":material/open_in_new:", use_container_width=True)
+
+
+@st.dialog("Recovery step", width="large", icon=":material/task_alt:")
 def action_dialog(state: IncidentState, action_id: str) -> None:
+    state = st.session_state.get("incident", state)
     action = next(item for item in state.actions if item.id == action_id)
-    st.markdown(f"## {ACTION_ICONS.get(action.tool_name, '✓')} {action.title}")
+    st.markdown(f"## {action.title}")
     st.info(f"Why this step is included: {action_reason(state, action)}")
     st.caption("Never enter passwords, OTPs, PINs, recovery codes, or full card numbers into First30.")
     if action.status == "skipped":
@@ -212,7 +267,7 @@ def action_dialog(state: IncidentState, action_id: str) -> None:
             prepared_state.notification_channel = st.selectbox("Message channel", ["WhatsApp", "SMS", "Telegram", "Email"], key=f"channel_r{state.case_revision}_{action.id}")
         if st.button("Prepare tailored guidance", type="primary", use_container_width=True, key=f"prepare_r{state.case_revision}_{action.id}"):
             st.session_state.incident = prepare_current_action(prepared_state)
-            st.rerun()
+            st.rerun(scope="fragment")
         return
     elif action.status == "pending":
         st.caption("This step is upcoming. Complete or skip the current-priority step first.")
@@ -242,6 +297,12 @@ def developer_dialog(state: IncidentState) -> None:
     if state.image_metadata:
         st.write(f"Screenshot status: {'Analysed' if state.images_analyzed else 'Not analysed'}")
     st.write(f"Case revision: {state.case_revision}")
+    st.write(f"Accepted model findings: {state.facts.accepted_model_findings}")
+    st.write(f"Rejected unsupported findings: {state.facts.rejected_model_findings}")
+    st.write(f"Conflicted findings: {state.facts.conflicted_findings}")
+    st.write(f"Rules-confirmed findings: {state.facts.rules_only_findings}")
+    if state.facts.model_diagnostic:
+        st.warning(f"Diagnostic: {state.facts.model_diagnostic}")
     if state.analysis_warning:
         st.warning(state.analysis_warning)
     elif state.assessment_source == "curated_rules_plus_llm":
@@ -252,7 +313,7 @@ def developer_dialog(state: IncidentState) -> None:
 
 def incident_details_page() -> None:
     restore_intake_draft()
-    render_brandbar()
+    render_header_badge()
     st.markdown('<div class="f30-eyebrow">Incident intake</div>', unsafe_allow_html=True)
     st.title("Tell us what happened")
     st.markdown('<div class="f30-lead">Share what you know. Only the incident description is required; every other field can be left blank.</div>', unsafe_allow_html=True)
@@ -366,7 +427,7 @@ def render_progress_hero(state: IncidentState) -> None:
 
 
 def response_dashboard_page() -> None:
-    render_brandbar()
+    render_header_badge()
     state: IncidentState | None = st.session_state.get("incident")
     if not state:
         st.markdown('<div class="f30-eyebrow">Response dashboard</div>', unsafe_allow_html=True)
@@ -375,42 +436,74 @@ def response_dashboard_page() -> None:
         if st.button("Go to Incident Details", type="primary"):
             st.switch_page(INCIDENT_PAGE)
         return
-    render_progress_hero(state)
-    if state.analysis_warning:
-        st.warning(state.analysis_warning)
-    st.markdown('<h2 class="f30-section-head">Risks identified</h2><div class="f30-section-copy">Open a tile to see supporting evidence and uncertainty.</div>', unsafe_allow_html=True)
-    risk_columns = st.columns(3)
-    for index, risk in enumerate(state.risks):
-        label, icon = SEVERITY_LABELS[risk.severity]
-        with risk_columns[index % 3]:
-            if st.button(f"{icon}  {label.upper()}\n\n{risk.title}\n\nOpen risk details →", key=f"risk_tile_{risk.severity.value}_{state.case_revision}_{risk.id}", use_container_width=True):
-                risk_dialog(state, risk)
-    st.markdown('<h2 class="f30-section-head">Official support</h2><div class="f30-section-copy">ScamShield guidance remains available throughout your response.</div>', unsafe_allow_html=True)
-    support_col, _ = st.columns([1, 2])
-    with support_col:
-        if st.button("🛡️  SCAMSHIELD\n\nOfficial scam guidance and 1799 helpline\n\nOpen guidance →", key=f"scamshield_tile_{state.case_revision}", use_container_width=True):
-            scamshield_dialog()
-    st.markdown('<h2 class="f30-section-head">Your First30 plan</h2><div class="f30-section-copy">Open the current step, prepare its guidance, then confirm what you completed yourself.</div>', unsafe_allow_html=True)
-    step_columns = st.columns(2)
-    for index, action in enumerate(state.actions, start=1):
-        current = action.id == state.current_action_id
-        status = STATUS_LABELS.get(action.status, action.status.title())
-        key_status = "current" if current else action.status
-        with step_columns[(index - 1) % 2]:
-            if st.button(
-                f"{ACTION_ICONS.get(action.tool_name, '✓')}  STEP {index} · {status.upper()}\n\n{action.title}\n\n{action.description}",
-                key=f"step_tile_{key_status}_{state.case_revision}_{action.id}", use_container_width=True,
-            ):
-                action_dialog(state, action.id)
+    support_column, progress_column = st.columns([7, 5], gap="medium")
+    with support_column:
+        with st.container(border=True, height=205, key="support_board"):
+            st.markdown('<div class="f30-board-title">Official support</div><div class="f30-board-copy">Check, report, or contact the appropriate public service.</div>', unsafe_allow_html=True)
+            support_tiles = st.columns(3, gap="small")
+            support_definitions = (
+                ("check", "ScamShield Check", "Check the supplied phone number, message, or link", ":material/search:"),
+                ("report", "ScamShield Report", "Report a suspicious call, message, or website", ":material/report:"),
+                ("police", "Police Help", "Emergency contacts and official reporting", ":material/local_police:"),
+            )
+            for column, (kind, title, description, icon) in zip(support_tiles, support_definitions):
+                with column:
+                    if st.button(f"**{title}**\n\n{description}", icon=icon, key=f"support_tile_{kind}_{state.case_revision}", use_container_width=True):
+                        support_dialog(kind, state)
+    with progress_column:
+        with st.container(border=True, height=205, key="progress_board"):
+            render_progress_hero(state)
+            if state.analysis_warning:
+                st.warning(state.analysis_warning)
+
+    risk_column, plan_column = st.columns([5, 7], gap="medium")
+    with risk_column:
+        with st.container(border=True, height=410, key="risk_board"):
+            st.markdown('<div class="f30-board-title">Risks identified</div><div class="f30-board-copy">Confirmed risks and findings that still need clarification.</div>', unsafe_allow_html=True)
+            risk_columns = st.columns(2, gap="small")
+            card_index = 0
+            for risk in state.risks:
+                label, icon = SEVERITY_LABELS[risk.severity]
+                with risk_columns[card_index % 2]:
+                    if st.button(
+                        f"{label.upper()}\n\n**{risk.title}**\n\nView supporting facts",
+                        icon=icon, key=f"risk_tile_{risk.severity.value}_{state.case_revision}_{risk.id}", use_container_width=True,
+                    ):
+                        risk_dialog(state, risk)
+                card_index += 1
+            for finding in (item for item in state.facts.exposure_findings if item.status == "possible"):
+                with risk_columns[card_index % 2]:
+                    if st.button(
+                        f"NEEDS CONFIRMATION\n\n**{finding.category.replace('_', ' ').title()}**\n\nClarify this finding",
+                        icon=":material/help:", key=f"risk_tile_possible_{state.case_revision}_{finding.category}", use_container_width=True,
+                    ):
+                        possible_finding_dialog(finding)
+                card_index += 1
+    with plan_column:
+        with st.container(border=True, height=410, key="plan_board"):
+            st.markdown('<div class="f30-board-title">Your First30 plan</div><div class="f30-board-copy">Open the current step, prepare its guidance, then confirm what you completed.</div>', unsafe_allow_html=True)
+            step_columns = st.columns(2, gap="small")
+            for index, action in enumerate(state.actions, start=1):
+                current = action.id == state.current_action_id
+                status = STATUS_LABELS.get(action.status, action.status.title())
+                key_status = "current" if current else action.status
+                with step_columns[(index - 1) % 2]:
+                    if st.button(
+                        f"STEP {index} · {status.upper()}\n\n**{action.title}**\n\n{action.description}",
+                        icon=ACTION_ICONS.get(action.tool_name, ":material/task_alt:"),
+                        key=f"step_tile_{key_status}_{state.case_revision}_{action.id}", use_container_width=True,
+                    ):
+                        action_dialog(state, action.id)
     st.divider()
     if st.button("Developer details", key=f"developer_{state.case_revision}"):
         developer_dialog(state)
     st.caption("Prototype only. First30 does not access accounts, submit reports, upload evidence to official services, or send messages.")
 
 
-st.set_page_config(page_title="First30", page_icon="🛡️", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="First30", page_icon=":material/security:", layout="wide", initial_sidebar_state="collapsed")
+st.logo(Path(__file__).parent / "src" / "ui" / "first30-logo.svg", size="large")
 load_styles()
-INCIDENT_PAGE = st.Page(incident_details_page, title="Incident Details", icon="📝", default=True)
-DASHBOARD_PAGE = st.Page(response_dashboard_page, title="Response Dashboard", icon="📊")
+INCIDENT_PAGE = st.Page(incident_details_page, title="Incident Details", icon=":material/edit_note:", default=True)
+DASHBOARD_PAGE = st.Page(response_dashboard_page, title="Response Dashboard", icon=":material/dashboard:")
 navigation = st.navigation([INCIDENT_PAGE, DASHBOARD_PAGE], position="top")
 navigation.run()

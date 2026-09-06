@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -21,6 +21,23 @@ class Risk(BaseModel):
     source_exposure: str
 
 
+class EvidenceRef(BaseModel):
+    """A user-visible fact that supports or contradicts an exposure finding."""
+
+    source: Literal["user_tag", "narrative", "structured_field", "image"]
+    field: str
+    excerpt: str
+
+
+class ExposureFinding(BaseModel):
+    """A bounded finding; only confirmed findings may create required actions."""
+
+    category: str
+    status: Literal["confirmed", "possible", "ruled_out"]
+    evidence: list[EvidenceRef] = Field(default_factory=list)
+    conflict_notes: list[str] = Field(default_factory=list)
+
+
 class RecoveryAction(BaseModel):
     id: str
     title: str
@@ -36,7 +53,29 @@ class ToolResult(BaseModel):
     action: str
     message: str
     requires_confirmation: bool = False
-    metadata: dict[str, str] = Field(default_factory=dict)
+    artifact: "GuidanceArtifact | None" = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class OfficialRoute(BaseModel):
+    label: str
+    url: str = ""
+    phone: str = ""
+    note: str = ""
+
+
+class CopyBlock(BaseModel):
+    id: str
+    title: str
+    text: str
+
+
+class GuidanceArtifact(BaseModel):
+    summary: str
+    instructions: list[str] = Field(default_factory=list)
+    official_routes: list[OfficialRoute] = Field(default_factory=list)
+    copy_blocks: list[CopyBlock] = Field(default_factory=list)
+    report_fields: dict[str, str] = Field(default_factory=dict)
 
 
 class ImageMetadata(BaseModel):
@@ -86,6 +125,12 @@ class IncidentFacts(BaseModel):
     risk_evidence: dict[str, list[str]] = Field(default_factory=dict)
     uncertainties: list[str] = Field(default_factory=list)
     needs_review: list[str] = Field(default_factory=list)
+    exposure_findings: list[ExposureFinding] = Field(default_factory=list)
+    accepted_model_findings: int = 0
+    rejected_model_findings: int = 0
+    conflicted_findings: int = 0
+    rules_only_findings: int = 0
+    model_diagnostic: str = ""
 
 
 class IncidentState(BaseModel):

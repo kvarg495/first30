@@ -18,7 +18,11 @@ class FakeModel:
     def invoke(self, _prompt):
         if self.schema is ExposureAssessment:
             return {
-                "exposures": ["singpass_details"],
+                "findings": [{
+                    "category": "singpass_details",
+                    "status": "confirmed",
+                    "evidence": [{"source": "narrative", "field": "narrative", "excerpt": "identity account"}],
+                }],
                 "rationale": "Identity access was disclosed in the narrative.",
             }
         if self.schema is PlanDecision:
@@ -124,6 +128,59 @@ def test_plain_language_no_money_statement_is_not_misread_as_a_transfer() -> Non
     )
     assert state.facts.money_transferred == "no"
     assert "prepare_bank_freeze" not in [action.tool_name for action in state.actions]
+
+
+def test_named_ocbc_and_explicit_no_bank_details_does_not_create_bank_action() -> None:
+    intake = IncidentIntake(
+        narrative="I use OCBC, but I did not provide any bank or card details and no money was transferred.",
+        bank_or_provider="OCBC",
+        money_transfer_status="no",
+    )
+    state = run_incident(intake.narrative, intake=intake, use_llm=False)
+    assert state.facts.bank_or_card_details_exposed is False
+    assert "card_details" not in state.compromised_assets
+    assert "prepare_bank_freeze" not in [action.tool_name for action in state.actions]
+
+
+def test_card_details_shared_without_transfer_remains_critical() -> None:
+    intake = IncidentIntake(
+        narrative="I entered my credit card details into a fake site, but no money was transferred.",
+        bank_or_provider="OCBC",
+        money_transfer_status="no",
+    )
+    state = run_incident(intake.narrative, intake=intake, use_llm=False)
+    assert state.facts.bank_or_card_details_exposed is True
+    assert state.risks[0].severity.value == "critical"
+    assert "prepare_bank_freeze" in [action.tool_name for action in state.actions]
+
+
+def test_unsupported_model_bank_inference_is_possible_not_confirmed() -> None:
+    class UnsupportedBankModel(FakeModel):
+        def invoke(self, prompt):
+            if self.schema is ExposureAssessment:
+                return {
+                    "findings": [{
+                        "category": "card_details", "status": "confirmed",
+                        "evidence": [{"source": "narrative", "excerpt": "OCBC"}],
+                    }]
+                }
+            return super().invoke(prompt)
+
+    narrative = "The caller claimed to be from OCBC, but I shared no card details."
+    exposures, _, _, _, facts = assess_incident_with_model(narrative, [], UnsupportedBankModel())
+    finding = next(item for item in facts.exposure_findings if item.category == "card_details")
+    assert "card_details" not in exposures
+    assert finding.status in {"possible", "ruled_out"}
+    assert facts.rejected_model_findings == 1
+
+
+def test_demo_domain_is_preserved_for_scamshield_checking() -> None:
+    state = run_incident(
+        "The caller sent singpass-security-check.example/verify and asked for my Singpass OTP.",
+        selected_exposures=["singpass_details", "otp"],
+        use_llm=False,
+    )
+    assert "singpass-security-check.example/verify" in state.facts.suspicious_urls
 
 
 def test_preparing_and_advancing_do_not_reassess_or_repeat_the_plan() -> None:

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="176" height="42" viewBox="0 0 176 42" role="img" aria-labelledby="title">
+  <title id="title">First30</title>
+  <rect width="42" height="42" rx="12" fill="#1769aa"/>
+  <path d="M12 11h18v5H18v5h10v5H18v7h-6V11Z" fill="#fff"/>
+  <path d="M30.4 27.5c0-3.3 2.1-5.5 5.1-5.5 2.9 0 4.9 2.2 4.9 5.5s-2 5.5-4.9 5.5c-3 0-5.1-2.2-5.1-5.5Zm3.5 0c0 1.7.6 2.6 1.6 2.6s1.5-.9 1.5-2.6-.5-2.6-1.5-2.6-1.6.9-1.6 2.6Z" fill="#9ed5f3"/>
+  <text x="54" y="28" fill="#ffffff" font-family="Inter, Segoe UI, sans-serif" font-size="22" font-weight="750">First30</text>
+</svg>

@@ -29,6 +29,8 @@ def assess_node(
     analysed = bool(images) and source == "curated_rules_plus_llm"
     metadata = [item.model_copy(update={"analysis_status": "analysed" if analysed else "not_analysed"}) for item in state.image_metadata]
     warning = None
+    if source == "curated_rules_fallback":
+        warning = "AI analysis was unavailable, so this case used checked local rules. Open Developer details for configuration diagnostics."
     if images and not analysed:
         warning = "Screenshot analysis was unavailable. The plan uses your written details and safety rules; screenshots were not analysed."
     return {

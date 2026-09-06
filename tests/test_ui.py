@@ -29,7 +29,9 @@ def test_submission_redirects_to_fresh_dashboard(monkeypatch) -> None:
     assert at.session_state["incident"].case_revision == 1
     assert at.session_state["incident"].completed_action_ids == []
     labels = [button.label for button in at.button]
-    assert any("SCAMSHIELD" in label for label in labels)
+    assert any("ScamShield Check" in label for label in labels)
+    assert any("ScamShield Report" in label for label in labels)
+    assert any("Police Help" in label for label in labels)
     assert any("Secure Singpass access" in label for label in labels)
     assert not any("Secure your bank or card" in label for label in labels)
 
@@ -39,5 +41,5 @@ def test_dashboard_exposes_risk_and_step_tile_controls(monkeypatch) -> None:
     at.text_area[0].set_value(NARRATIVE).run()
     at.button(key="submit_incident").click().run()
     assert not at.exception
-    assert any("Open risk details" in button.label for button in at.button)
+    assert any("View supporting facts" in button.label for button in at.button)
     assert any("STEP 1" in button.label for button in at.button)

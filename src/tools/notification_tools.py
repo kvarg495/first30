@@ -1,4 +1,4 @@
-from src.state import IncidentState, ToolResult
+from src.state import CopyBlock, GuidanceArtifact, IncidentState, ToolResult
 
 
 def draft_contact_notification(state: IncidentState) -> ToolResult:
@@ -24,5 +24,10 @@ Thanks,
         success=True,
         action="draft_contact_notification",
         message="Trusted-contact notification drafted for review; it has not been sent.",
+        artifact=GuidanceArtifact(
+            summary=f"Review this {state.notification_channel} warning before sending it yourself.",
+            instructions=["Verify the recipient using a trusted contact method.", "Edit any placeholders and remove details the recipient does not need."],
+            copy_blocks=[CopyBlock(id="trusted-contact-message", title=f"{state.notification_channel} draft", text=template)],
+        ),
         metadata={"mode": "mock", "delivery": "not-sent", "format": state.notification_channel.lower(), "content": template},
     )
