@@ -546,10 +546,48 @@ def response_dashboard_page() -> None:
     st.caption("Prototype only. First30 does not access accounts, submit reports, upload evidence to official services, or send messages.")
 
 
+def help_page() -> None:
+    """Explain the prototype workflow in plain language for people using the app."""
+    render_header_badge()
+    st.title("How First30 works")
+    st.markdown(
+        '<div class="f30-lead">First30 helps you organise the first recovery steps after a suspected scam. '
+        'It prepares guidance and drafts for your review; you remain in control of every external action.</div>',
+        unsafe_allow_html=True,
+    )
+
+    with st.container(border=True):
+        section_intro("1. Tell us what happened", "Describe the incident and select the information that may have been exposed.")
+        st.write("You can add context such as the suspicious contact, website, affected bank, and any money transferred. "
+                 "Screenshots are optional—only upload images you are comfortable having analysed.")
+
+    with st.container(border=True):
+        section_intro("2. Review the response dashboard", "Open a risk tile to see why it was identified, then open the current recovery-step tile.")
+        st.write("Each recovery step prepares tailored guidance, an editable draft, or a link to an official service. "
+                 "Complete steps in order where possible, and use the checklists to keep track of what you have done.")
+
+    with st.container(border=True):
+        section_intro("3. Take external action yourself", "First30 does not contact organisations or change accounts on your behalf.")
+        st.warning(
+            "The app never accesses your bank, Singpass, email, passwords, OTPs, PINs, or card details. "
+            "It does not submit reports, upload evidence to official services, or send messages."
+        )
+        st.write("Use the prepared drafts and official links to contact your bank, Singpass, police, or trusted contacts directly.")
+
+    with st.container(border=True):
+        section_intro("Optional AI analysis", "The app can use Amazon Bedrock only when an AWS IAM Identity Center profile is configured and signed in.")
+        st.write("The AI can help classify the incident and prioritise approved recovery steps. If it is unavailable, "
+                 "First30 uses its built-in guidance instead.")
+
+    st.error("If money may be at risk, contact your bank through its official channel immediately. For urgent police assistance in Singapore, call 999.")
+    st.caption("This is a prototype. Check the official service before relying on any guidance.")
+
+
 st.set_page_config(page_title="First30", page_icon=":material/security:", layout="wide", initial_sidebar_state="collapsed")
 st.logo(Path(__file__).parent / "src" / "ui" / "first30-logo.svg", size="large")
 load_styles()
 INCIDENT_PAGE = st.Page(incident_details_page, title="Incident Details", icon=":material/edit_note:", default=True)
 DASHBOARD_PAGE = st.Page(response_dashboard_page, title="Response Dashboard", icon=":material/dashboard:")
-navigation = st.navigation([INCIDENT_PAGE, DASHBOARD_PAGE], position="top")
+HELP_PAGE = st.Page(help_page, title="How it works", icon=":material/help:")
+navigation = st.navigation([INCIDENT_PAGE, DASHBOARD_PAGE, HELP_PAGE], position="top")
 navigation.run()
