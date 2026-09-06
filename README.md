@@ -99,9 +99,20 @@ The LLM is deliberately bounded: it can classify into known exposure categories 
 
 Try:
 
-> I clicked a fake parcel delivery website and entered my DBS credit-card details, OTP and Gmail password.
+> On 6 September 2026 at about 2:15pm, I received a WhatsApp message claiming to be from OCBC Fraud Prevention. The sender said there was a suspicious transaction and asked me to verify my account. I clicked https://ocbc-secure-check.example/verify and entered my name, mobile number, OCBC card number, card expiry date, and CVV. I then shared the OTP sent to my phone. No transfer has appeared yet, but I am worried the scammer may use my card. The sender’s number was +65 8123 4567. I have screenshots of the WhatsApp chat and website.
 
-The graph should identify critical financial exposure, let the user prepare a bank/card hand-off, show the official link and call script, wait for the user to confirm the external step, then move through evidence and report drafts.
+> Suggested form fields
+> - Scam channel: WhatsApp
+> - Impersonated organisation: OCBC
+> - Suspicious contact: +65 8123 4567
+> - Suspicious URL: https://ocbc-secure-check.example/verify
+> - Bank/provider: OCBC
+> - Transfer status: No transfer made / no unauthorised transaction noticed
+> - Information exposed: select Card or bank details and OTP
+> - Discovery method: I realised it was suspicious after the conversation ended
+> - Actions already taken: None yet
+
+Expected outcome: critical card/banking and OTP risks, with Secure your bank or card as the first required action, using the official OCBC Kill Switch route. It should also include evidence preservation, ScamShield/Police support, a police-report preparation step, and a trusted-contact warning.
 
 ## Safety boundaries
 
