@@ -39,6 +39,35 @@ class ToolResult(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
 
 
+class ImageMetadata(BaseModel):
+    """Non-sensitive upload metadata retained with a case revision."""
+
+    name: str
+    media_type: Literal["image/png", "image/jpeg", "image/webp"]
+    size_bytes: int
+    width: int
+    height: int
+    analysis_status: Literal["analysed", "not_analysed"] = "not_analysed"
+
+
+class IncidentIntake(BaseModel):
+    """Structured, optional context supplied explicitly by the user."""
+
+    narrative: str = Field(min_length=1)
+    incident_date_time: str = ""
+    scam_channels: list[str] = Field(default_factory=list)
+    impersonated_organisation: str = ""
+    suspicious_contact: str = ""
+    suspicious_url: str = ""
+    bank_or_provider: str = ""
+    money_transfer_status: Literal["yes", "no", "unknown"] = "unknown"
+    amount: str = ""
+    discovery_method: str = ""
+    actions_already_taken: str = ""
+    exposure_tags: list[str] = Field(default_factory=list)
+    image_metadata: list[ImageMetadata] = Field(default_factory=list)
+
+
 class IncidentFacts(BaseModel):
     """Bounded, redacted facts used to choose context-specific recovery work."""
 
@@ -53,10 +82,19 @@ class IncidentFacts(BaseModel):
     suspect_identifiers: list[str] = Field(default_factory=list)
     suspicious_urls: list[str] = Field(default_factory=list)
     evidence_available: list[str] = Field(default_factory=list)
+    image_observations: list[str] = Field(default_factory=list)
+    risk_evidence: dict[str, list[str]] = Field(default_factory=dict)
+    uncertainties: list[str] = Field(default_factory=list)
+    needs_review: list[str] = Field(default_factory=list)
 
 
 class IncidentState(BaseModel):
     description: str
+    intake: IncidentIntake | None = None
+    case_revision: int = 0
+    image_metadata: list[ImageMetadata] = Field(default_factory=list)
+    images_analyzed: bool = False
+    analysis_warning: str | None = None
     incident_updates: list[str] = Field(default_factory=list)
     selected_exposures: list[str] = Field(default_factory=list)
     facts: IncidentFacts = Field(default_factory=IncidentFacts)

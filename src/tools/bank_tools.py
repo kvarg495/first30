@@ -7,6 +7,14 @@ BANK_HANDOFFS = {
         "url": "https://www.dbs.com.sg/personal/support/bank-ssb-safety-switch.html",
         "phone": "DBS Fraud Hotline: 1800 339 6963 (Singapore), 24/7",
     },
+    "OCBC": {
+        "url": "https://www.ocbc.com/personal-banking/security/kill-switch.page",
+        "phone": "OCBC Fraud Hotline: +65 6363 3333",
+    },
+    "UOB": {
+        "url": "https://www.uob.com.sg/personal/digital-banking/security/index.page",
+        "phone": "UOB Fraud Hotline: +65 6255 0160",
+    },
 }
 
 

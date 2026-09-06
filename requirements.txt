@@ -1,8 +1,8 @@
-streamlit>=1.40,<2
+streamlit>=1.63,<2
+Pillow>=10.4,<12
 langgraph>=0.2,<1
 pydantic>=2.9,<3
 python-dotenv>=1.0,<2
 langchain-groq>=0.2,<1
 langchain-aws>=0.2,<1
 pytest>=8.3,<9
-

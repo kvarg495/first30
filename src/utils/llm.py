@@ -20,15 +20,40 @@ def get_chat_model():
         )
 
     if provider == "bedrock":
-        from langchain_aws import ChatBedrock
+        from langchain_aws import ChatBedrockConverse
 
-        return ChatBedrock(
-            model_id=os.getenv("BEDROCK_MODEL_ID", "amazon.nova-micro-v1:0"),
+        return ChatBedrockConverse(
+            model=os.getenv("BEDROCK_MODEL_ID", "amazon.nova-lite-v1:0"),
             region_name=os.getenv("AWS_REGION", "us-east-1"),
-            model_kwargs={"temperature": 0},
+            temperature=0,
         )
 
     raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")
+
+
+def get_analysis_configuration() -> dict[str, str | bool]:
+    """Return non-secret provider diagnostics suitable for the developer dialog."""
+    load_dotenv()
+    provider = os.getenv("LLM_PROVIDER", "groq").casefold()
+    model = (
+        os.getenv("BEDROCK_MODEL_ID", "amazon.nova-lite-v1:0")
+        if provider == "bedrock"
+        else os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    )
+    image_capable = provider == "bedrock" and any(
+        family in model.casefold() for family in ("nova-lite", "nova-pro", "nova-premier")
+    )
+    credentials_available = bool(
+        os.getenv("AWS_PROFILE")
+        or os.getenv("AWS_ACCESS_KEY_ID")
+        or os.getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI")
+    ) if provider == "bedrock" else bool(os.getenv("GROQ_API_KEY"))
+    return {
+        "provider": provider,
+        "model": model,
+        "image_capable": image_capable,
+        "credentials_available": credentials_available,
+    }
 
 
 def get_optional_chat_model() -> Any | None:
