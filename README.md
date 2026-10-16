@@ -1,136 +1,98 @@
 # First30
 
-**Every minute matters.** First30 is a Singapore-focused scam incident-response agent for people who have already been scammed or exposed sensitive information.
+First30 is a Singapore-focused scam-response prototype. It helps someone who has already shared sensitive information or lost money work out which accounts may be at risk and what to do next.
 
-This repository is a proof-of-concept starter for the SimplifyNext Agentic AI Hackathon. It demonstrates the core loop:
+We built it for the SimplifyNext Agentic AI Hackathon 2026. It prepares guidance, drafts and links to official services. It does not contact banks, freeze accounts, submit police reports or recover money.
 
-`intake -> assess -> plan -> choose action -> use tool -> review state -> replan`
+## My contribution
 
-It intentionally uses mocked recovery tools. It never asks for banking passwords, Singpass passwords, OTPs, or card PINs. Each action has two explicit stages: First30 prepares a local draft or official hand-off, then the user confirms whether they completed the real-world step themselves.
+I'm [Aryan Sharma](https://github.com/Aryann-Sharma), one of the team members. I worked on the Streamlit interface: risk displays, action-progress indicators, confirmation controls, a demo scenario and in-app help. I connected the interface to the shared incident state and response workflow.
 
-The response is context-sensitive: an OTP is classified by its likely use (bank transaction, Singpass, account recovery, or unknown) before a containment action is selected. A Singpass-related OTP does not create a bank-card action unless the incident also indicates a transfer or bank/card exposure.
+The [interface commit](https://github.com/kvarg495/first30/commit/f51610b9aa527fffe3d7cb65b70b76ac8372bf70) and [help-page commit](https://github.com/kvarg495/first30/commit/f9c0f8483932a4918bd93e62c95332011c99c3ad) show this work. LangGraph orchestration, recovery tools and model integration were part of the wider team project.
 
-## Architecture
+## What the app does
 
-```text
-Streamlit UI
-    |
-Pydantic IncidentState
-    |
-LangGraph orchestrator
-    |-- assess risk (curated rules + optional structured LLM)
-    |-- plan and prioritise approved tools
-    |-- choose next action
-    |-- execute mocked tool
-    `-- store observation and replan
-         |
-         |-- bank action mock
-         |-- account action mock
-         |-- evidence tool mock
-         `-- reporting tool mock
-```
+- Collects an incident description and the types of information exposed.
+- Shows the identified risks and a prioritised response plan.
+- Prepares account-security guidance, evidence checklists, reporting suggestions and trusted-contact drafts.
+- Tracks which steps the user has prepared, completed or skipped.
+- Reassesses the plan when the user adds information.
+- Optionally reads consented screenshots through Amazon Bedrock.
 
-## Project structure
+The app separates preparing guidance from confirming that a real-world step is complete. For example, preparing bank-security instructions does not mean that a bank card has been blocked.
+
+## How it works
 
 ```text
-first30/
-|-- app.py
-|-- requirements.txt
-|-- .env.example
-|-- README.md
-|-- CONTRIBUTING.md
-|-- src/
-|   |-- state.py
-|   |-- graph.py
-|   |-- agents/
-|   |   |-- assessor.py
-|   |   |-- planner.py
-|   |   `-- reviewer.py
-|   |-- tools/
-|   |   |-- bank_tools.py
-|   |   |-- reporting_tools.py
-|   |   |-- account_tools.py
-|   |   |-- evidence_tools.py
-|   |   |-- notification_tools.py
-|   |   `-- registry.py
-|   |-- data/
-|   |   `-- singapore_guidance.py
-|   `-- utils/
-|       `-- llm.py
-`-- tests/
-    |-- test_agent_workflow.py
-    |-- test_scenarios.py
-    `-- test_tools.py
+Streamlit intake
+    -> Pydantic incident state
+    -> assessment
+    -> plan and next action
+    -> mocked tool / local draft
+    -> user confirmation or new information
 ```
 
-## Quick start
+LangGraph manages the workflow. Curated rules control severity, allowed tools and action ordering. The optional model helps assess the incident; invalid output or a model failure falls back to local rules.
 
-1. Create and activate a virtual environment: `python3.13 -m venv .venv && source .venv/bin/activate`.
-2. Install dependencies with `python -m pip install -r requirements.txt`.
-3. [Configure an AWS IAM Identity Center profile](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html) with `aws configure sso --profile first30-bedrock`. Choose an account and permission set with access to the configured Amazon Bedrock model.
-4. Sign in and cache the session with `aws sso login --profile first30-bedrock`.
-5. Copy `.env.example` to `.env`. Set `AWS_PROFILE` to the profile name from step 3. Do not add `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, or `AWS_SESSION_TOKEN`; environment credentials take precedence over the Identity Center provider.
-6. Run `python -m streamlit run app.py`.
-7. Run tests with `python -m pytest -q`.
+The stack is Python, Streamlit, Pydantic and LangGraph, with Amazon Bedrock / Nova Lite for optional text and image input. A Groq model adapter is also available. Tool functions prepare local guidance and drafts.
 
-The application works deterministically without sending incident details to an LLM. When the Bedrock Identity Center profile is signed in, Amazon Nova Lite can assess the structured intake and consented screenshots in one bounded multimodal request. The AWS SDK retrieves and refreshes the role credentials from the cached Identity Center session; rerun `aws sso login --profile first30-bedrock` when the portal session itself expires. Explicit user-entered facts take precedence over model or image inference. Invalid output or model failure falls back to deterministic rules and marks screenshots as not analysed.
+## Run locally
 
-## Agent loop
-
-The graph follows this controlled cycle:
+Use Python 3.13. From the repository root:
 
 ```text
-assess -> plan -> select -> execute -> observe/review
-             ^                         |
-             `---------- replan -------'
+python -m venv .venv
 ```
 
-`IncidentState` is the shared source of truth. It retains redacted incident facts, risks, prepared and completed action IDs, structured tool results, the activity log, and the current plan version. A tool result means guidance has been prepared; it never means that a bank, Singpass, email, or police action was performed. `continue_incident(...)` resumes the same state when the user confirms, skips, or adds new information, without losing prior work.
+Activate the environment:
 
-## Case preparation
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
 
-The two-page UI keeps an editable Incident Details intake separate from a tile-based Response Dashboard. ScamShield guidance remains visible, each risk and recovery step opens in a dialog, and human-confirmed completion drives the segmented progress display. Evidence preparation is preservation guidance only. Police-report preparation shows copyable SPF-style field suggestions, and trusted-contact drafts are channel-appropriate and editable. The prototype links to official services but does not sign in, upload evidence to official services, submit reports, or send messages.
+```bash
+# macOS or Linux
+source .venv/bin/activate
+```
 
-Uploaded screenshots are validated and re-encoded in memory with Pillow, which strips metadata and limits image size. Bytes remain only in Streamlit session memory and are transmitted to Bedrock only after explicit acknowledgement; they are never stored in `IncidentState`, on disk, in logs, or in Git.
+Install dependencies and start the app:
 
-The LLM is deliberately bounded: it can classify into known exposure categories and order an incident-specific allow-list, but curated code owns severity, official guidance, available tools, confirmation requirements, and the rule that containment precedes documentation.
+```text
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
+```
 
-## Demo scenario
+Leave `AWS_PROFILE` and LLM credentials unconfigured to use the deterministic local workflow. This mode does not analyse screenshot contents with a model.
 
-Try:
+### Optional Bedrock setup
 
-> On 6 September 2026 at about 2:15pm, I received a WhatsApp message claiming to be from OCBC Fraud Prevention. The sender said there was a suspicious transaction and asked me to verify my account. I clicked https://ocbc-secure-check.example/verify and entered my name, mobile number, OCBC card number, card expiry date, and CVV. I then shared the OTP sent to my phone. No transfer has appeared yet, but I am worried the scammer may use my card. The sender’s number was +65 8123 4567. I have screenshots of the WhatsApp chat and website.
+1. Configure an AWS IAM Identity Center profile with access to the configured Bedrock model: `aws configure sso --profile first30-bedrock`.
+2. Sign in with `aws sso login --profile first30-bedrock`.
+3. Copy `.env.example` to `.env` and set `AWS_PROFILE` to the profile name. Keep the Bedrock provider and model settings, then restart the app.
 
-> Suggested form fields
-> - Scam channel: WhatsApp
-> - Impersonated organisation: OCBC
-> - Suspicious contact: +65 8123 4567
-> - Suspicious URL: https://ocbc-secure-check.example/verify
-> - Bank/provider: OCBC
-> - Transfer status: No transfer made / no unauthorised transaction noticed
-> - Information exposed: select Card or bank details and OTP
-> - Discovery method: I realised it was suspicious after the conversation ended
-> - Actions already taken: None yet
+Do not put access keys or session tokens in `.env`; environment credentials can override the profile. If the portal session expires, run the login command again.
 
-Expected outcome: critical card/banking and OTP risks, with Secure your bank or card as the first required action, using the official OCBC Kill Switch route. It should also include evidence preservation, ScamShield/Police support, a police-report preparation step, and a trusted-contact warning.
+Explicit user-entered facts take precedence over model or image inference. Screenshots are validated and re-encoded in memory before any consented model request. Their bytes are not saved in the incident state or on disk.
 
-## Safety boundaries
+## Try a scenario
 
-- Do not collect authentication secrets, OTPs, card PINs, or full payment credentials.
-- Do not claim that First30 can recover funds.
-- Keep bank, Singpass, ScamShield, and police interactions mocked for the POC.
-- Require explicit confirmation before consequential actions.
-- Link users to official services for real account or reporting actions.
-- Treat the curated guidance as prototype data that must be verified before production use.
+Describe an incident where you entered bank-card details and an OTP on a fake bank website, but have not noticed a transfer. Select the matching exposure categories.
 
-## Planned stack
+The plan should prioritise securing the bank/card, then show evidence-preservation guidance and reporting/support steps. A Singpass-only exposure should not produce a bank-card action unless bank details or a transfer are also involved.
 
-- Frontend: Streamlit
-- Backend: Python
-- Orchestration: LangGraph
-- State and schemas: Pydantic
-- Hackathon LLM: AWS Bedrock / Amazon Nova Lite (text and image input)
-- Optional fallback LLM: Groq / GPT-OSS 120B
-- Tools: mocked Python functions
-- Knowledge: curated Singapore scam-response guidance
-- AWS authentication: IAM Identity Center profile, with the local `.env` containing only the non-secret profile name and model configuration
+Use made-up details for the demo. Do not enter passwords, actual OTPs, card PINs or full payment credentials.
+
+## Tests
+
+```text
+python -m pytest -q
+```
+
+The tests cover workflow state, incident scenarios, tool results, image validation, model configuration, official links and the Streamlit UI. The repository currently has no GitHub Actions workflow; these are local tests.
+
+## Limits
+
+This is a hackathon prototype with mocked recovery actions, not a live incident-response service. The curated guidance needs review before production use. Screenshot analysis can fail or miss information, so the user must check the incident details and take real actions through official channels.
+
+Source layout: `app.py` and `src/ui/` contain the interface, `src/graph.py` the workflow, `src/agents/` the assessment/planning code, and `src/tools/` the mocked tools. See [CONTRIBUTING](https://github.com/kvarg495/first30/blob/main/CONTRIBUTING.md) for the team's interfaces and development notes.
